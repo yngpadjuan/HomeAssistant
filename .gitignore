@@ -1,125 +1,32 @@
-# ==========================================
-# Home Assistant .gitignore
-# ==========================================
+# Ignore everything by default
+*
 
-# ---- Secrets & Credentials ----
+# Whitelist directories and files to track
+!*/
+!.gitignore
+!*.yaml
+!*.md
+!*.txt
+!*.sh
+!blueprints/yngpadjuan/
+!custom_components/
+!dashboards/
+!packages/
+!python_scripts/
+!themes/
+!www/
+
+# SENSITIVE DATA - NEVER TRACK THESE
 secrets.yaml
-SERVICE_ACCOUNT.json
-*.google.token
-.google.token
-.spotify-token-cache
-.ring_cache.pickle
-.homekit.state
-*.pickle
-home-assistant.env
-
-# ---- Databases ----
-*.db
-*.db-journal
-*.db-shm
-*.db-wal
-*.sqlite
-
-# ---- Logs ----
-*.log
-*.log.*
-logs/
-OZW_Log.txt
-upnp.log
-
-# ---- Home Assistant Runtime ----
-.HA_VERSION
-.ha_run.lock
-.cloud/
-.storage/
-.ip_authenticated.yaml
-.config_entries.json
-ip_bans.yaml
 known_devices.yaml
-entity_registry.yaml
-home-assistant_v2.db
+.ssh/
+*.p12
+
+# DYNAMIC & TEMPORARY FILES
 home-assistant.log*
-
-# ---- Caches ----
-__pycache__/
-*.pyc
-*.pyo
-.cache
-.cache/
-.cache-*
-.pc-session
-abodepy_cache.pickle
-
-# ---- Dependencies & Generated ----
-deps/
+home-assistant_v2.db*
+zigbee.db*
+ip_counts.yaml
 tts/
-components/
-
-# ---- Downloads & Backups ----
-downloads/
-backups/
-*.backup
-
-# ---- Binary & Build Artifacts ----
-go2rtc-*
-rtsp2webrtc_*
-google*.deb
-*.noload
-*.uuid
-
-# ---- Integration Configs (auto-generated) ----
-google_calendars.yaml
-*.conf
-ecobee.conf
-fitbit.conf
-lyric.conf
-phue.conf
-phue-*.conf
-plex.conf
-harmony_*.conf
-
-# ---- Media & Large Assets ----
-icloud/
-dlib_faces/
-dlib_nofaces/
-dlib_known_faces/
-dlib_unknown_faces/
-
-# ---- WWW subdirectories (community/generated) ----
-www/icons/
-www/floorplans/
-www/community/
-
-# ---- Custom components (managed by HACS) ----
-custom_components/
-
-# ---- Integration State Directories ----
-.aarlo/
-Abode/
-
-# ---- Image cache ----
-image/
-
-# ---- Z-Wave XML configs ----
-zwcfg_*.xml
-zwscene.xml
-
-# ---- JSON configs (auto-generated / not needed in repo) ----
-alexaIntentSchema.json
-emulated_hue_ids.json
-HAApiAi.json
-HASSGoogAssist.json
-
-# ---- Scripts with hardcoded credentials ----
-python/
-
-# ---- Misc ----
-life360.sh
-camera_recording.py
-options.xml
-lbp_frontalface.xml
-
-# ---- Ignore specific files in blueprints (if needed) ----
-blueprints/automation/homeassistant
-blueprints/script/homeassistant
-blueprints/automation/panhans
+.DS_Store
+.storage/
