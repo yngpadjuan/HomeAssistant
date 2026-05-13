@@ -96,7 +96,7 @@ action:
   - variables:
       hvac_id: !input hvac_entity
       delta: !input input_temperature_increase
-      #fan_mode: !input input_fan_mode
+      fan: !input input_fan_mode
       fan_hours: !input input_run_fan_time
       current_setpoint: "{{ state_attr(hvac_id, 'temperature') | float }}"
       previous_mode: "{{ states(hvac_id) }}"
@@ -111,7 +111,7 @@ action:
     target:
       entity_id: "{{ hvac_id }}"
     data:
-      fan_mode: !input input_fan_mode
+      fan_mode: "{{ fan }}"
   - alias: "Run fan for configured duration"
     delay:
       hours: "{{ fan_hours / 8 }}"
