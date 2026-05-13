@@ -118,3 +118,8 @@ life360.sh
 camera_recording.py
 options.xml
 lbp_frontalface.xml
+
+# ---- Ignore specific files in blueprints (if needed) ----
+blueprints/automation/homeassistant
+blueprints/script/homeassistant
+blueprints/automation/panhans
