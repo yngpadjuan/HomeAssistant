@@ -1,0 +1,46 @@
+blueprint:
+  name: HVAC Overuse Alert
+  author: yngpadjuan
+  homeassistant:
+    min_version: "2024.10.0"
+  description: "Send an alert when the HVAC system is used excessively, indicating potential overuse or inefficiency." 
+  domain: automation
+  input:
+    hvac_entity:
+      name: HVAC System
+      description: "Select the HVAC system entity to monitor for overuse."
+      selector:
+        entity:   
+          domain: climate
+    
+    overuse_threshold:
+      name: Overuse Threshold
+      description: "Set the threshold for HVAC usage in hours per day to trigger the alert."
+      default: 8
+      selector:
+        number:
+          min: 1
+          max: 24
+          step: 1
+    alert_message:
+      name: Alert Message
+      description: "Customize the alert message to be sent when overuse is detected."
+      default: "Alert: The HVAC system has been used for over 8 hours today, which may indicate overuse or inefficiency."
+      selector:
+        text:
+    
+    input_temperature_sensor:
+          name: Room Temperature Sensor
+          description: >
+            Temperature sensor to monitor the room temperature. This can help provide context for HVAC usage and identify if the system is working harder than necessary due to extreme temperatures.
+
+            Note: This is an additional sensor inside your room usually next to your favourite spot. [Thermostats](https://www.home-assistant.io/integrations/climate/) or its integration (e.g. Z2M or ZHA) except Tado should provide a seperate calibration entity.
+          default: []
+          selector:
+            entity:
+              filter:
+                - domain:
+                    - sensor
+                  device_class:
+                    - temperature
+              multiple: false

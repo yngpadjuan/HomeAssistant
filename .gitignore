@@ -1,0 +1,10 @@
+.cache
+tts
+*.lock
+secrets.yaml
+*.log
+*.db
+*.sqlite
+*.bak
+*.backup
+*.tmp

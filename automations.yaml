@@ -1,0 +1,46 @@
+- id: '1778630464831'
+  alias: Streat Light - Off
+  description: Automation to turn off Street Light daily
+  triggers:
+  - trigger: sun
+    event: sunrise
+    offset: -05:00:00
+  conditions: []
+  actions:
+  - action: switch.turn_off
+    metadata: {}
+    data: {}
+    target:
+      device_id: 38dbc885ee27b8f23e0e3a8b55fa5a17
+  mode: single
+- id: '1778630823884'
+  alias: Street Light - On
+  description: Automation to turn Street Light On
+  triggers:
+  - trigger: sun
+    event: sunset
+    offset: 00:20:00
+  conditions: []
+  actions:
+  - action: switch.turn_on
+    metadata: {}
+    target:
+      device_id: 38dbc885ee27b8f23e0e3a8b55fa5a17
+    data: {}
+  mode: single
+- id: '1778631022999'
+  alias: Travel Light - On
+  description: ''
+  triggers:
+  - trigger: sun
+    event: sunset
+    offset: -00:30:00
+  conditions: []
+  actions:
+  - action: light.turn_on
+    metadata: {}
+    target:
+      entity_id: light.outlet_switch
+    data:
+      brightness_pct: 100
+  mode: single
