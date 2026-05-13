@@ -70,12 +70,12 @@ blueprint:
     input_fan_mode:
       name: Fan HVAC Mode
       description: "The HVAC mode to activate while the fan runs. Choose the mode your thermostat uses for fan_mode circulation."
-      default: on
+      default: "on"
       selector:
         select:
           options:
-            - on
-            - off
+            - "on"
+            - "off"
           custom_value: true
 
 trigger:
