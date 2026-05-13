@@ -1,46 +1,122 @@
 blueprint:
-  name: HVAC Overuse Alert
+  name: HVAC Overuse Guard
   author: yngpadjuan
   homeassistant:
     min_version: "2024.10.0"
-  description: "Send an alert when the HVAC system is used excessively, indicating potential overuse or inefficiency." 
+  description: >
+    When the HVAC setpoint has been lower than the room temperature sensor for longer than
+    the overuse threshold, raise the setpoint and run the fan to allow the system to recover.
   domain: automation
   input:
     hvac_entity:
       name: HVAC System
-      description: "Select the HVAC system entity to monitor for overuse."
+      description: "The climate entity to monitor and adjust."
       selector:
-        entity:   
+        entity:
           domain: climate
-    
+
+    input_temperature_sensor:
+      name: Room Temperature Sensor
+      description: >
+        Temperature sensor to monitor the room temperature. This can help provide context
+        for HVAC usage and identify if the system is working harder than necessary.
+
+        Note: This is an additional sensor inside your room usually next to your favourite
+        spot. Thermostats or their integration (e.g. Z2M or ZHA) except Tado should provide
+        a separate calibration entity.
+      selector:
+        entity:
+          filter:
+            - domain:
+                - sensor
+              device_class:
+                - temperature
+          multiple: false
+
     overuse_threshold:
       name: Overuse Threshold
-      description: "Set the threshold for HVAC usage in hours per day to trigger the alert."
+      description: "How many hours the setpoint must remain below room temperature before acting."
       default: 8
       selector:
         number:
           min: 1
           max: 24
           step: 1
-    alert_message:
-      name: Alert Message
-      description: "Customize the alert message to be sent when overuse is detected."
-      default: "Alert: The HVAC system has been used for over 8 hours today, which may indicate overuse or inefficiency."
-      selector:
-        text:
-    
-    input_temperature_sensor:
-          name: Room Temperature Sensor
-          description: >
-            Temperature sensor to monitor the room temperature. This can help provide context for HVAC usage and identify if the system is working harder than necessary due to extreme temperatures.
+          unit_of_measurement: hours
 
-            Note: This is an additional sensor inside your room usually next to your favourite spot. [Thermostats](https://www.home-assistant.io/integrations/climate/) or its integration (e.g. Z2M or ZHA) except Tado should provide a seperate calibration entity.
-          default: []
-          selector:
-            entity:
-              filter:
-                - domain:
-                    - sensor
-                  device_class:
-                    - temperature
-              multiple: false
+    input_temperature_increase:
+      name: Temperature Increase
+      description: "How many degrees to raise the HVAC setpoint when overuse is detected."
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 20
+          step: 0.5
+          unit_of_measurement: "°F"
+
+    input_run_fan_time:
+      name: Fan Run Time
+      description: "How many hours to run the fan after raising the setpoint."
+      default: 4
+      selector:
+        number:
+          min: 1
+          max: 24
+          step: 1
+          unit_of_measurement: hours
+
+    input_fan_mode:
+      name: Fan HVAC Mode
+      description: "The HVAC mode to activate while the fan runs. Choose the mode your thermostat uses for fan-only circulation."
+      default: fan_only
+      selector:
+        select:
+          options:
+            - fan_only
+            - fan
+            - circulate
+          custom_value: true
+
+variables:
+  hvac: !input hvac_entity
+  sensor: !input input_temperature_sensor
+  temp_increase: !input input_temperature_increase
+  fan_time: !input input_run_fan_time
+  fan_mode: !input input_fan_mode
+
+trigger:
+  - platform: template
+    value_template: >
+      {{ state_attr(hvac, 'temperature') | float(0) < states(sensor) | float(0) }}
+    for:
+      hours: !input overuse_threshold
+
+condition: []
+
+action:
+  - variables:
+      previous_mode: "{{ states(hvac) }}"
+  - alias: "Raise the HVAC setpoint"
+    service: climate.set_temperature
+    target:
+      entity_id: !input hvac_entity
+    data:
+      temperature: "{{ (state_attr(hvac, 'temperature') | float(0)) + (temp_increase | float(0)) }}"
+  - alias: "Switch to fan mode"
+    service: climate.set_hvac_mode
+    target:
+      entity_id: !input hvac_entity
+    data:
+      hvac_mode: "{{ fan_mode }}"
+  - alias: "Run fan for configured duration"
+    delay:
+      hours: "{{ fan_time }}"
+  - alias: "Restore previous HVAC mode"
+    service: climate.set_hvac_mode
+    target:
+      entity_id: !input hvac_entity
+    data:
+      hvac_mode: "{{ previous_mode }}"
+
+mode: single
