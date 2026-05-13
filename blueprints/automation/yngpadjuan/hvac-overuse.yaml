@@ -98,8 +98,10 @@ action:
       delta: !input input_temperature_increase
       fan: !input input_fan_mode
       fan_hours: !input input_run_fan_time
-      current_setpoint: "{{ state_attr(hvac_id, 'temperature') | float }}"
+      current_setpoint: "{{ state_attr(hvac_id, 'temperature') | float(0) }}"
       previous_mode: "{{ states(hvac_id) }}"
+  - condition: template
+    value_template: "{{ current_setpoint > 0 }}"
   - alias: "Raise the HVAC setpoint"
     service: climate.set_temperature
     target:
