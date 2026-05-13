@@ -48,8 +48,8 @@ blueprint:
       name: Temperature Increase
       description: >
         How many degrees to raise the HVAC setpoint when overuse is detected.
-        Enter the value in your system's temperature unit (°C or °F).
-      default: 5
+        Enter the value in your thermostat's native unit (°C or °F).
+      default: 3
       selector:
         number:
           min: 1
@@ -74,22 +74,19 @@ blueprint:
       selector:
         select:
           options:
-            - fan_only
-            - fan
-            - circulate
+            - on
+            - off
           custom_value: true
-
-variables:
-  hvac: !input hvac_entity
-  sensor: !input input_temperature_sensor
-  temp_increase: !input input_temperature_increase
-  fan_time: !input input_run_fan_time
-  fan_mode: !input input_fan_mode
 
 trigger:
   - platform: template
     value_template: >
-      {{ state_attr(hvac, 'temperature') | float(0) < states(sensor) | float(0) }}
+      {% set setpoint = state_attr(hvac_id, 'temperature') | float(none) %}
+      {% set room = states(sensor_id) | float(none) %}
+      {{ setpoint is not none and room is not none and room > setpoint }}
+    variables:
+      hvac_id: !input hvac_entity
+      sensor_id: !input input_temperature_sensor
     for:
       hours: !input overuse_threshold
 
@@ -97,26 +94,31 @@ condition: []
 
 action:
   - variables:
-      previous_mode: "{{ states(hvac) }}"
+      hvac_id: !input hvac_entity
+      delta: !input input_temperature_increase
+      fan_mode: !input input_fan_mode
+      fan_hours: !input input_run_fan_time
+      current_setpoint: "{{ state_attr(hvac_id, 'temperature') | float }}"
+      previous_mode: "{{ states(hvac_id) }}"
   - alias: "Raise the HVAC setpoint"
     service: climate.set_temperature
     target:
-      entity_id: !input hvac_entity
+      entity_id: "{{ hvac_id }}"
     data:
-      temperature: "{{ (state_attr(hvac, 'temperature') | float(0)) + (temp_increase | float(0)) }}"
+      temperature: "{{ current_setpoint + delta }}"
   - alias: "Switch to fan mode"
     service: climate.set_hvac_mode
     target:
-      entity_id: !input hvac_entity
+      entity_id: "{{ hvac_id }}"
     data:
-      hvac_mode: "{{ fan_mode }}"
+      fan_mode: "{{ fan_mode }}"
   - alias: "Run fan for configured duration"
     delay:
-      hours: "{{ fan_time }}"
+      hours: "{{ fan_hours / 8 }}"
   - alias: "Restore previous HVAC mode"
     service: climate.set_hvac_mode
     target:
-      entity_id: !input hvac_entity
+      entity_id: "{{ hvac_id }}"
     data:
       hvac_mode: "{{ previous_mode }}"
 
