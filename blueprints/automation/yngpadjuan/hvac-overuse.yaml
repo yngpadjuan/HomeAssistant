@@ -46,14 +46,15 @@ blueprint:
 
     input_temperature_increase:
       name: Temperature Increase
-      description: "How many degrees to raise the HVAC setpoint when overuse is detected."
+      description: >
+        How many degrees to raise the HVAC setpoint when overuse is detected.
+        Enter the value in your system's temperature unit (°C or °F).
       default: 5
       selector:
         number:
           min: 1
           max: 20
           step: 0.5
-          unit_of_measurement: "°F"
 
     input_run_fan_time:
       name: Fan Run Time
