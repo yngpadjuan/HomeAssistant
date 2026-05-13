@@ -81,7 +81,7 @@ blueprint:
 trigger:
   - platform: template
     value_template: >
-      {% set setpoint = states(climate.set_temperature) | float(none) %}
+      {% set setpoint = states(hvac_id.set_temperature) | float(none) %}
       {% set room = states(sensor_id) | float(none) %}
       {{ setpoint is not none and room is not none and room > setpoint }}
     variables:
@@ -98,7 +98,7 @@ action:
       delta: !input input_temperature_increase
       fan: !input input_fan_mode
       fan_hours: !input input_run_fan_time
-      current_setpoint: "{{ states(climate.set_temperature) | float(0) }}"
+      current_setpoint: "{{ states(hvac_id.set_temperature) | float(0) }}"
       previous_mode: "{{ states(hvac_id) }}"
   - condition: template
     value_template: "{{ current_setpoint > 0 }}"
