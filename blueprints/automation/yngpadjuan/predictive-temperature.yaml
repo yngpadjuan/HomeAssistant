@@ -2,10 +2,10 @@ blueprint:
   name: Predictive Temperature Control
   description: >
     Runs hourly to scan the weather forecast up to a configurable number of hours ahead.
-    Uses a thermal model (T_inside = T_outside + insulation_factor × (T_inside_current - T_outside_current))
-    to estimate future indoor temperature for each forecast hour. Creates calendar events
-    and sends notifications on days where predicted indoor temperature will fall outside
-    the comfort range.
+    Uses Newton's Law of Cooling to simulate how indoor temperature gradually drifts toward
+    outdoor temperature each hour. Applies a heat index adjustment when humidity is high.
+    Creates timed calendar events and sends notifications when predicted indoor temperature
+    will fall outside the comfort range.
   author: yngpadjuan
   homeassistant:
     min_version: "2024.10.0"
@@ -62,19 +62,33 @@ blueprint:
           max: 85
           step: 0.5
 
-    insulation_factor:
-      name: Insulation Factor
+    thermal_rate:
+      name: Thermal Rate
       description: >
-        How well your home retains its temperature relative to outside conditions.
-        0.0 = no insulation (indoor tracks outdoor exactly), 1.0 = perfect insulation
-        (indoor never changes). A typical well-insulated home is around 0.3–0.6.
-        Values above 1.0 are invalid and will produce unrealistic predictions.
-      default: 0.4
+        How quickly indoor temperature drifts toward outdoor temperature each hour,
+        expressed as a fraction of the remaining gap (Newton's Law of Cooling).
+        0.05 = very well insulated (~20 hours to equilibrate).
+        0.15 = average home (~7 hours to equilibrate).
+        0.30 = poorly insulated (~3 hours to equilibrate).
+      default: 0.1
+      selector:
+        number:
+          min: 0.01
+          max: 0.5
+          step: 0.01
+
+    humidity_weight:
+      name: Humidity Weight
+      description: >
+        How much forecast humidity amplifies the perceived indoor temperature when hot.
+        0.0 = ignore humidity. 0.5 = moderate effect. 1.0 = full heat index effect.
+        Only applied when predicted indoor temperature exceeds the comfort high threshold.
+      default: 0.5
       selector:
         number:
           min: 0.0
           max: 1.0
-          step: 0.05
+          step: 0.1
 
     lookahead_hours:
       name: Lookahead Hours
@@ -99,7 +113,8 @@ action:
       calendar_id: !input input_calendar
       high_threshold: !input comfort_temp_high
       low_threshold: !input comfort_temp_low
-      insulation: !input insulation_factor
+      rate: !input thermal_rate
+      hum_weight: !input humidity_weight
       lookahead: !input lookahead_hours
   - variables:
       forecast: "{{ state_attr('sensor.hourly_forecast', 'forecast') }}"
@@ -108,16 +123,20 @@ action:
   - variables:
       cooling_windows: >
         {% set upcoming = forecast[:lookahead | int] %}
-        {% set ns = namespace(windows=[], start=none, peak=none, end=none) %}
+        {% set ns = namespace(t_indoor=current_indoor, windows=[], start=none, peak=none, end=none) %}
         {% for hour in upcoming %}
-          {% set t_predicted = (hour.temperature | float + (insulation | float * (current_indoor - current_outdoor))) | round(1) %}
+          {% set t_out = hour.temperature | float %}
+          {% set humidity = hour.humidity | float(50) %}
+          {% set ns.t_indoor = (ns.t_indoor + rate | float * (t_out - ns.t_indoor)) | round(2) %}
+          {% set heat_index_adj = hum_weight | float * (humidity - 40) * 0.025 if humidity > 40 else 0 %}
+          {% set t_feels = (ns.t_indoor + heat_index_adj) | round(1) %}
           {% set dt = as_datetime(hour.datetime) %}
-          {% if t_predicted > high_threshold | float %}
+          {% if t_feels > high_threshold | float %}
             {% if ns.start is none %}
               {% set ns.start = dt %}
-              {% set ns.peak = t_predicted %}
+              {% set ns.peak = t_feels %}
             {% else %}
-              {% set ns.peak = [ns.peak, t_predicted] | max %}
+              {% set ns.peak = [ns.peak, t_feels] | max %}
             {% endif %}
             {% set ns.end = dt %}
           {% else %}
@@ -135,16 +154,17 @@ action:
         {{ ns.windows }}
       heating_windows: >
         {% set upcoming = forecast[:lookahead | int] %}
-        {% set ns = namespace(windows=[], start=none, trough=none, end=none) %}
+        {% set ns = namespace(t_indoor=current_indoor, windows=[], start=none, trough=none, end=none) %}
         {% for hour in upcoming %}
-          {% set t_predicted = (hour.temperature | float + (insulation | float * (current_indoor - current_outdoor))) | round(1) %}
+          {% set t_out = hour.temperature | float %}
+          {% set ns.t_indoor = (ns.t_indoor + rate | float * (t_out - ns.t_indoor)) | round(2) %}
           {% set dt = as_datetime(hour.datetime) %}
-          {% if t_predicted < low_threshold | float %}
+          {% if ns.t_indoor < low_threshold | float %}
             {% if ns.start is none %}
               {% set ns.start = dt %}
-              {% set ns.trough = t_predicted %}
+              {% set ns.trough = ns.t_indoor %}
             {% else %}
-              {% set ns.trough = [ns.trough, t_predicted] | min %}
+              {% set ns.trough = [ns.trough, ns.t_indoor] | min %}
             {% endif %}
             {% set ns.end = dt %}
           {% else %}
@@ -185,8 +205,9 @@ action:
           data:
             summary: "Cooling Required (Predicted)"
             description: >
-              Predicted indoor peak: {{ repeat.item.peak }}°F.
-              Comfort ceiling: {{ high_threshold }}°F (insulation factor: {{ insulation }}).
+              Predicted indoor peak: {{ repeat.item.peak }}°F (includes humidity adjustment).
+              Comfort ceiling: {{ high_threshold }}°F.
+              Thermal rate: {{ rate }}, humidity weight: {{ hum_weight }}.
               Current indoor: {{ current_indoor }}°F, current outdoor: {{ current_outdoor }}°F.
             start_date_time: "{{ repeat.item.start }}"
             end_date_time: "{{ repeat.item.end }}"
@@ -216,7 +237,8 @@ action:
             summary: "Heating Required (Predicted)"
             description: >
               Predicted indoor trough: {{ repeat.item.trough }}°F.
-              Comfort floor: {{ low_threshold }}°F (insulation factor: {{ insulation }}).
+              Comfort floor: {{ low_threshold }}°F.
+              Thermal rate: {{ rate }}.
               Current indoor: {{ current_indoor }}°F, current outdoor: {{ current_outdoor }}°F.
             start_date_time: "{{ repeat.item.start }}"
             end_date_time: "{{ repeat.item.end }}"
