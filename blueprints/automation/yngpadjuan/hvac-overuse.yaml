@@ -15,23 +15,12 @@ blueprint:
         entity:
           domain: climate
 
-    input_temperature_sensor:
-      name: Room Temperature Sensor
-      description: >
-        Temperature sensor to monitor the room temperature. This can help provide context
-        for HVAC usage and identify if the system is working harder than necessary.
-
-        Note: This is an additional sensor inside your room usually next to your favourite
-        spot. Thermostats or their integration (e.g. Z2M or ZHA) except Tado should provide
-        a separate calibration entity.
+    input_mobile_app:
+      name: Mobile App
+      description: "Select the mobile app to receive notifications."
       selector:
-        entity:
-          filter:
-            - domain:
-                - sensor
-              device_class:
-                - temperature
-          multiple: false
+        device:
+          integration: mobile_app
 
     overuse_threshold:
       name: Overuse Threshold
@@ -44,18 +33,6 @@ blueprint:
           step: 1
           unit_of_measurement: hours
 
-    input_temperature_increase:
-      name: Temperature Increase
-      description: >
-        How many degrees to raise the HVAC setpoint when overuse is detected.
-        Enter the value in your thermostat's native unit (°C or °F).
-      default: 3
-      selector:
-        number:
-          min: 1
-          max: 20
-          step: 0.5
-
     input_run_fan_time:
       name: Fan Run Time
       description: "How many hours to run the fan after raising the setpoint."
@@ -67,63 +44,65 @@ blueprint:
           step: 1
           unit_of_measurement: hours
 
-    input_fan_mode:
-      name: Fan HVAC Mode
-      description: "The HVAC mode to activate while the fan runs. Choose the mode your thermostat uses for fan_mode circulation."
-      default: "on"
-      selector:
-        select:
-          options:
-            - "on"
-            - "off"
-          custom_value: true
-
 trigger:
   - platform: template
     value_template: >
-      {% set setpoint = states(hvac_id.set_temperature) | float(none) %}
-      {% set room = states(sensor_id) | float(none) %}
-      {{ setpoint is not none and room is not none and room > setpoint }}
+      {% set setpoint = state_attr(hvac_id, 'temperature') | float(none) %}
+      {% set setpoint_high = state_attr(hvac_id, 'target_temp_high') | float(none) %}
+      {% set effective_setpoint = setpoint if setpoint is not none else setpoint_high %}
+      {% set room = state_attr(hvac_id, 'current_temperature') | float(none) %}
+      {{ effective_setpoint is not none and room is not none and room > effective_setpoint }}
     variables:
       hvac_id: !input hvac_entity
-      sensor_id: !input input_temperature_sensor
     for:
       hours: !input overuse_threshold
 
 condition: []
 
-action:
+actions:
   - variables:
       hvac_id: !input hvac_entity
-      delta: !input input_temperature_increase
-      fan: !input input_fan_mode
       fan_hours: !input input_run_fan_time
-      current_setpoint: "{{ states(hvac_id.set_temperature) | float(0) }}"
-      previous_mode: "{{ states(hvac_id) }}"
-  - condition: template
-    value_template: "{{ current_setpoint > 0 }}"
-  - alias: "Raise the HVAC setpoint"
-    service: climate.set_temperature
+      mobile_app: !input input_mobile_app
+  
+  - alias: Sending Notification
+    action: notify.send_message
+    target:
+      device_id: "{{ mobile_app }}"
+    data:
+      title: "HVAC Overuse Detected"
+      message: "Changing to Eco mode and running fan for {{ fan_hours }} hours."
+  
+  - alias: Set HVAC to Eco mode
+    action: climate.set_preset_mode
     target:
       entity_id: "{{ hvac_id }}"
     data:
-      temperature: "{{ current_setpoint + delta }}"
-      hvac_mode: "{{ previous_mode }}"
-  - alias: "Switch to fan mode"
-    service: climate.set_hvac_mode
+      preset_mode: eco
+  
+  - alias: Switch to fan mode
     target:
       entity_id: "{{ hvac_id }}"
     data:
-      fan_mode: "{{ fan }}"
-  - alias: "Run fan for configured duration"
+      fan_mode: "on"
+    action: climate.set_fan_mode
+  
+  - alias: Run fan for configured duration
     delay:
-      hours: "{{ fan_hours / 8 }}"
-  - alias: "Restore previous HVAC mode"
-    service: climate.set_hvac_mode
+      hours: "{{ fan_hours }}"
+  
+  - alias: Stop fan mode
     target:
       entity_id: "{{ hvac_id }}"
     data:
-      temperature: "{{ current_setpoint }}"
-      hvac_mode: "{{ previous_mode }}"
+      fan_mode: "off"
+    action: climate.set_fan_mode
+  
+  - alias: Restore previous HVAC mode
+    action: climate.set_preset_mode
+    target:
+      entity_id: "{{ hvac_id }}"
+    data:
+      preset_mode: none
 
 mode: single
