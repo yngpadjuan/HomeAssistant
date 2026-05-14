@@ -66,13 +66,15 @@ blueprint:
       name: Insulation Factor
       description: >
         How well your home retains its temperature relative to outside conditions.
-        A typical well-insulated home is around 1.5 - 2.5.
-      default: 1.5
+        0.0 = no insulation (indoor tracks outdoor exactly), 1.0 = perfect insulation
+        (indoor never changes). A typical well-insulated home is around 0.3–0.6.
+        Values above 1.0 are invalid and will produce unrealistic predictions.
+      default: 0.4
       selector:
         number:
           min: 0.0
-          max: 5.0
-          step: 0.5
+          max: 1.0
+          step: 0.05
 
     lookahead_hours:
       name: Lookahead Hours
