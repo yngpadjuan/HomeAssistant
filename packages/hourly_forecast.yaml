@@ -1,0 +1,19 @@
+template:
+  - trigger:
+      - platform: homeassistant
+        event: start
+      - platform: time_pattern
+        hours: "/1"
+    action:
+      - service: weather.get_forecasts
+        data:
+          type: hourly
+        target:
+          entity_id: weather.forecast_home
+        response_variable: forecast_raw
+    sensor:
+      - name: Hourly Forecast
+        unique_id: hourly_forecast_helper
+        state: "{{ forecast_raw['weather.forecast_home'].forecast[0].temperature }}"
+        attributes:
+          forecast: "{{ forecast_raw['weather.forecast_home'].forecast }}"
