@@ -44,22 +44,22 @@ blueprint:
 
     comfort_temp_high:
       name: Comfort Temperature (High)
-      description: "The maximum comfortable predicted indoor temperature."
-      default: 24
+      description: "The maximum comfortable predicted indoor temperature (°F)."
+      default: 75
       selector:
         number:
-          min: 10
-          max: 35
+          min: 50
+          max: 95
           step: 0.5
 
     comfort_temp_low:
       name: Comfort Temperature (Low)
-      description: "The minimum comfortable predicted indoor temperature."
-      default: 18
+      description: "The minimum comfortable predicted indoor temperature (°F)."
+      default: 65
       selector:
         number:
-          min: -10
-          max: 30
+          min: 32
+          max: 85
           step: 0.5
 
     insulation_factor:
