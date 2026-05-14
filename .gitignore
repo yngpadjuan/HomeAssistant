@@ -3,7 +3,6 @@
 
 # Whitelist directories and files to track
 !*/
-!.gitignore
 !*.yaml
 !*.md
 !*.txt
@@ -23,7 +22,6 @@ known_devices.yaml
 *.p12
 
 # DYNAMIC & TEMPORARY FILES
-automation.yaml
 home-assistant.log*
 home-assistant_v2.db*
 zigbee.db*
