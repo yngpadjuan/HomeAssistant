@@ -53,3 +53,16 @@
       hvac_entity: climate.hallway
       input_mobile_app: 0168cfb1711510e055cfa2c57c9c95e2
       overuse_threshold: 4
+- id: '1778783931159'
+  alias: Predictive Temperature Control
+  description: ''
+  use_blueprint:
+    path: yngpadjuan/predictive-temperature.yaml
+    input:
+      hvac_entity: climate.hallway
+      outdoor_temp_sensor: sensor.hourly_forecast
+      input_mobile_app: 0168cfb1711510e055cfa2c57c9c95e2
+      input_calendar: calendar.predictive_temperature
+      comfort_temp_high: 78
+      comfort_temp_low: 60
+      lookahead_hours: 72
