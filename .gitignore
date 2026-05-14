@@ -3,7 +3,6 @@
 
 # Whitelist directories and files to track
 !*/
-!.gitignore
 !*.yaml
 !*.md
 !*.txt
@@ -31,3 +30,4 @@ ip_counts.yaml
 tts/
 .DS_Store
 .storage/
+.gitignore
