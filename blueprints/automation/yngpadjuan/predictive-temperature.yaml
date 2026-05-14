@@ -66,14 +66,13 @@ blueprint:
       name: Insulation Factor
       description: >
         How well your home retains its temperature relative to outside conditions.
-        0.0 = perfect insulation (indoor never changes), 1.0 = no insulation (indoor
-        matches outdoor). A typical well-insulated home is around 0.3–0.5.
-      default: 0.4
+        A typical well-insulated home is around 1.5 - 2.5.
+      default: 1.5
       selector:
         number:
           min: 0.0
-          max: 1.0
-          step: 0.05
+          max: 5.0
+          step: 0.5
 
     lookahead_hours:
       name: Lookahead Hours
@@ -167,7 +166,7 @@ action:
               Comfort ceiling: {{ high_threshold }}°F (insulation factor: {{ insulation }}).
               Current indoor: {{ current_indoor }}°F, current outdoor: {{ current_outdoor }}°F.
             start_date: "{{ repeat.item.date }}"
-            end_date: "{{ repeat.item.date }}"
+            end_date: "{{ (as_datetime(repeat.item.date) + timedelta(days=1)).strftime('%Y-%m-%d') }}"
 
   - repeat:
       for_each: "{{ heating_days }}"
@@ -197,7 +196,7 @@ action:
               Comfort floor: {{ low_threshold }}°F (insulation factor: {{ insulation }}).
               Current indoor: {{ current_indoor }}°F, current outdoor: {{ current_outdoor }}°F.
             start_date: "{{ repeat.item.date }}"
-            end_date: "{{ repeat.item.date }}"
+            end_date: "{{ (as_datetime(repeat.item.date) + timedelta(days=1)).strftime('%Y-%m-%d') }}"
 
   - condition: template
     value_template: "{{ cooling_days | length > 0 or heating_days | length > 0 }}"
