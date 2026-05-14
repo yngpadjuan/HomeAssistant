@@ -105,29 +105,36 @@ action:
       current_indoor: "{{ state_attr(hvac_id, 'current_temperature') | float(0) }}"
       current_outdoor: "{{ states(outdoor_sensor) | float(0) }}"
   - variables:
-      cooling_days: >
+      daily_predictions: >
         {% set upcoming = forecast[:lookahead | int] %}
-        {% set ns = namespace(days=[]) %}
+        {% set ns = namespace(days={}) %}
         {% for hour in upcoming %}
-          {% set t_predicted = hour.temperature | float + (insulation | float * (current_indoor - current_outdoor)) %}
-          {% if t_predicted > high_threshold | float %}
-            {% set day = as_datetime(hour.datetime).strftime('%Y-%m-%d') %}
-            {% if day not in ns.days %}
-              {% set ns.days = ns.days + [day] %}
-            {% endif %}
+          {% set t_predicted = (hour.temperature | float + (insulation | float * (current_indoor - current_outdoor))) | round(1) %}
+          {% set day = as_datetime(hour.datetime).strftime('%Y-%m-%d') %}
+          {% if day in ns.days %}
+            {% set existing = ns.days[day] %}
+            {% set ns.days = dict(ns.days, **{day: {
+                'high': [existing.high, t_predicted] | max,
+                'low': [existing.low, t_predicted] | min
+              }}) %}
+          {% else %}
+            {% set ns.days = dict(ns.days, **{day: {'high': t_predicted, 'low': t_predicted}}) %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.days }}
+      cooling_days: >
+        {% set ns = namespace(days=[]) %}
+        {% for day, temps in daily_predictions.items() %}
+          {% if temps.high > high_threshold | float %}
+            {% set ns.days = ns.days + [{'date': day, 'high': temps.high, 'low': temps.low}] %}
           {% endif %}
         {% endfor %}
         {{ ns.days }}
       heating_days: >
-        {% set upcoming = forecast[:lookahead | int] %}
         {% set ns = namespace(days=[]) %}
-        {% for hour in upcoming %}
-          {% set t_predicted = hour.temperature | float + (insulation | float * (current_indoor - current_outdoor)) %}
-          {% if t_predicted < low_threshold | float %}
-            {% set day = as_datetime(hour.datetime).strftime('%Y-%m-%d') %}
-            {% if day not in ns.days %}
-              {% set ns.days = ns.days + [day] %}
-            {% endif %}
+        {% for day, temps in daily_predictions.items() %}
+          {% if temps.low < low_threshold | float %}
+            {% set ns.days = ns.days + [{'date': day, 'high': temps.high, 'low': temps.low}] %}
           {% endif %}
         {% endfor %}
         {{ ns.days }}
@@ -135,6 +142,20 @@ action:
   - repeat:
       for_each: "{{ cooling_days }}"
       sequence:
+        - alias: "Check for existing cooling event"
+          action: calendar.get_events
+          target:
+            entity_id: "{{ calendar_id }}"
+          data:
+            start_date_time: "{{ repeat.item.date }}T00:00:00"
+            end_date_time: "{{ repeat.item.date }}T23:59:59"
+          response_variable: existing_events
+        - alias: "Create cooling event only if not already present"
+          condition: template
+          value_template: >
+            {{ existing_events[calendar_id].events
+               | selectattr('summary', 'eq', 'Cooling Required (Predicted)')
+               | list | length == 0 }}
         - alias: "Create calendar event for predicted cooling day"
           action: calendar.create_event
           target:
@@ -142,15 +163,29 @@ action:
           data:
             summary: "Cooling Required (Predicted)"
             description: >
-              Indoor temperature predicted to exceed {{ high_threshold }}°
-              based on forecast and insulation factor of {{ insulation }}.
-              Current indoor: {{ current_indoor }}°, current outdoor: {{ current_outdoor }}°.
-            start_date: "{{ repeat.item }}"
-            end_date: "{{ repeat.item }}"
+              Predicted indoor high: {{ repeat.item.high }}°F, low: {{ repeat.item.low }}°F.
+              Comfort ceiling: {{ high_threshold }}°F (insulation factor: {{ insulation }}).
+              Current indoor: {{ current_indoor }}°F, current outdoor: {{ current_outdoor }}°F.
+            start_date: "{{ repeat.item.date }}"
+            end_date: "{{ repeat.item.date }}"
 
   - repeat:
       for_each: "{{ heating_days }}"
       sequence:
+        - alias: "Check for existing heating event"
+          action: calendar.get_events
+          target:
+            entity_id: "{{ calendar_id }}"
+          data:
+            start_date_time: "{{ repeat.item.date }}T00:00:00"
+            end_date_time: "{{ repeat.item.date }}T23:59:59"
+          response_variable: existing_events
+        - alias: "Create heating event only if not already present"
+          condition: template
+          value_template: >
+            {{ existing_events[calendar_id].events
+               | selectattr('summary', 'eq', 'Heating Required (Predicted)')
+               | list | length == 0 }}
         - alias: "Create calendar event for predicted heating day"
           action: calendar.create_event
           target:
@@ -158,11 +193,11 @@ action:
           data:
             summary: "Heating Required (Predicted)"
             description: >
-              Indoor temperature predicted to drop below {{ low_threshold }}°
-              based on forecast and insulation factor of {{ insulation }}.
-              Current indoor: {{ current_indoor }}°, current outdoor: {{ current_outdoor }}°.
-            start_date: "{{ repeat.item }}"
-            end_date: "{{ repeat.item }}"
+              Predicted indoor high: {{ repeat.item.high }}°F, low: {{ repeat.item.low }}°F.
+              Comfort floor: {{ low_threshold }}°F (insulation factor: {{ insulation }}).
+              Current indoor: {{ current_indoor }}°F, current outdoor: {{ current_outdoor }}°F.
+            start_date: "{{ repeat.item.date }}"
+            end_date: "{{ repeat.item.date }}"
 
   - condition: template
     value_template: "{{ cooling_days | length > 0 or heating_days | length > 0 }}"
@@ -175,11 +210,13 @@ action:
       title: "HVAC Prediction Update"
       message: >
         {% if cooling_days | length > 0 %}
-        Cooling likely needed on {{ cooling_days | length }} day(s): {{ cooling_days | join(', ') }}.
+        Cooling likely needed on {{ cooling_days | length }} day(s):
+        {% for day in cooling_days %}{{ day.date }} (H:{{ day.high }}°F L:{{ day.low }}°F){% if not loop.last %}, {% endif %}{% endfor %}.
         {% endif %}
         {% if heating_days | length > 0 %}
-        Heating likely needed on {{ heating_days | length }} day(s): {{ heating_days | join(', ') }}.
+        Heating likely needed on {{ heating_days | length }} day(s):
+        {% for day in heating_days %}{{ day.date }} (H:{{ day.high }}°F L:{{ day.low }}°F){% if not loop.last %}, {% endif %}{% endfor %}.
         {% endif %}
-        Current indoor: {{ current_indoor }}°, outdoor: {{ current_outdoor }}°.
+        Current indoor: {{ current_indoor }}°F, outdoor: {{ current_outdoor }}°F.
 
 mode: single
