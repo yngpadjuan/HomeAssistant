@@ -1,0 +1,185 @@
+blueprint:
+  name: Predictive Temperature Control
+  description: >
+    Runs hourly to scan the weather forecast up to a configurable number of hours ahead.
+    Uses a thermal model (T_inside = T_outside + insulation_factor × (T_inside_current - T_outside_current))
+    to estimate future indoor temperature for each forecast hour. Creates calendar events
+    and sends notifications on days where predicted indoor temperature will fall outside
+    the comfort range.
+  author: yngpadjuan
+  homeassistant:
+    min_version: "2024.10.0"
+  domain: automation
+  input:
+    hvac_entity:
+      name: HVAC System
+      description: "The climate entity to read current indoor temperature from."
+      selector:
+        entity:
+          domain: climate
+
+    outdoor_temp_sensor:
+      name: Outdoor Temperature Sensor
+      description: "Current outdoor temperature sensor used as the baseline for the thermal model."
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: temperature
+          multiple: false
+
+    input_mobile_app:
+      name: Mobile App
+      description: "Select the mobile app to receive notifications."
+      selector:
+        device:
+          integration: mobile_app
+
+    input_calendar:
+      name: Calendar
+      description: "The input calendar to add HVAC required events to."
+      selector:
+        entity:
+          domain: calendar
+
+    comfort_temp_high:
+      name: Comfort Temperature (High)
+      description: "The maximum comfortable predicted indoor temperature."
+      default: 24
+      selector:
+        number:
+          min: 10
+          max: 35
+          step: 0.5
+
+    comfort_temp_low:
+      name: Comfort Temperature (Low)
+      description: "The minimum comfortable predicted indoor temperature."
+      default: 18
+      selector:
+        number:
+          min: -10
+          max: 30
+          step: 0.5
+
+    insulation_factor:
+      name: Insulation Factor
+      description: >
+        How well your home retains its temperature relative to outside conditions.
+        0.0 = perfect insulation (indoor never changes), 1.0 = no insulation (indoor
+        matches outdoor). A typical well-insulated home is around 0.3–0.5.
+      default: 0.4
+      selector:
+        number:
+          min: 0.0
+          max: 1.0
+          step: 0.05
+
+    lookahead_hours:
+      name: Lookahead Hours
+      description: "How many hours ahead to scan in the forecast. Most providers supply up to 72 hours."
+      default: 48
+      selector:
+        number:
+          min: 1
+          max: 72
+          step: 1
+          unit_of_measurement: hours
+
+trigger:
+  - platform: time_pattern
+    hours: "/1"
+
+action:
+  - variables:
+      hvac_id: !input hvac_entity
+      outdoor_sensor: !input outdoor_temp_sensor
+      mobile_app: !input input_mobile_app
+      calendar_id: !input input_calendar
+      high_threshold: !input comfort_temp_high
+      low_threshold: !input comfort_temp_low
+      insulation: !input insulation_factor
+      lookahead: !input lookahead_hours
+  - variables:
+      forecast: "{{ state_attr('sensor.hourly_forecast', 'forecast') }}"
+      current_indoor: "{{ state_attr(hvac_id, 'current_temperature') | float(0) }}"
+      current_outdoor: "{{ states(outdoor_sensor) | float(0) }}"
+  - variables:
+      cooling_days: >
+        {% set upcoming = forecast[:lookahead | int] %}
+        {% set ns = namespace(days=[]) %}
+        {% for hour in upcoming %}
+          {% set t_predicted = hour.temperature | float + (insulation | float * (current_indoor - current_outdoor)) %}
+          {% if t_predicted > high_threshold | float %}
+            {% set day = as_datetime(hour.datetime).strftime('%Y-%m-%d') %}
+            {% if day not in ns.days %}
+              {% set ns.days = ns.days + [day] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.days }}
+      heating_days: >
+        {% set upcoming = forecast[:lookahead | int] %}
+        {% set ns = namespace(days=[]) %}
+        {% for hour in upcoming %}
+          {% set t_predicted = hour.temperature | float + (insulation | float * (current_indoor - current_outdoor)) %}
+          {% if t_predicted < low_threshold | float %}
+            {% set day = as_datetime(hour.datetime).strftime('%Y-%m-%d') %}
+            {% if day not in ns.days %}
+              {% set ns.days = ns.days + [day] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.days }}
+
+  - repeat:
+      for_each: "{{ cooling_days }}"
+      sequence:
+        - alias: "Create calendar event for predicted cooling day"
+          action: calendar.create_event
+          target:
+            entity_id: "{{ calendar_id }}"
+          data:
+            summary: "Cooling Required (Predicted)"
+            description: >
+              Indoor temperature predicted to exceed {{ high_threshold }}°
+              based on forecast and insulation factor of {{ insulation }}.
+              Current indoor: {{ current_indoor }}°, current outdoor: {{ current_outdoor }}°.
+            start_date: "{{ repeat.item }}"
+            end_date: "{{ repeat.item }}"
+
+  - repeat:
+      for_each: "{{ heating_days }}"
+      sequence:
+        - alias: "Create calendar event for predicted heating day"
+          action: calendar.create_event
+          target:
+            entity_id: "{{ calendar_id }}"
+          data:
+            summary: "Heating Required (Predicted)"
+            description: >
+              Indoor temperature predicted to drop below {{ low_threshold }}°
+              based on forecast and insulation factor of {{ insulation }}.
+              Current indoor: {{ current_indoor }}°, current outdoor: {{ current_outdoor }}°.
+            start_date: "{{ repeat.item }}"
+            end_date: "{{ repeat.item }}"
+
+  - condition: template
+    value_template: "{{ cooling_days | length > 0 or heating_days | length > 0 }}"
+
+  - alias: "Send forecast notification"
+    action: notify.send_message
+    target:
+      device_id: "{{ mobile_app }}"
+    data:
+      title: "HVAC Prediction Update"
+      message: >
+        {% if cooling_days | length > 0 %}
+        Cooling likely needed on {{ cooling_days | length }} day(s): {{ cooling_days | join(', ') }}.
+        {% endif %}
+        {% if heating_days | length > 0 %}
+        Heating likely needed on {{ heating_days | length }} day(s): {{ heating_days | join(', ') }}.
+        {% endif %}
+        Current indoor: {{ current_indoor }}°, outdoor: {{ current_outdoor }}°.
+
+mode: single
