@@ -1,0 +1,56 @@
+# Replace climate.YOUR_CLIMATE_ENTITY with your actual climate entity ID throughout this file.
+
+template:
+  - sensor:
+      - name: HVAC Action
+        unique_id: hvac_action_tracker
+        state: "{{ state_attr('climate.hallway', 'hvac_action') | default('idle') }}"
+
+sensor:
+  - platform: history_stats
+    name: HVAC Heating Hours Today
+    entity_id: sensor.hvac_action
+    state: "heating"
+    type: time
+    start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+    end: "{{ now() }}"
+
+  - platform: history_stats
+    name: HVAC Cooling Hours Today
+    entity_id: sensor.hvac_action
+    state: "cooling"
+    type: time
+    start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+    end: "{{ now() }}"
+
+  - platform: history_stats
+    name: HVAC Fan Running Hours Today
+    entity_id: sensor.hvac_action
+    state: "fan"
+    type: time
+    start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+    end: "{{ now() }}"
+
+  - platform: history_stats
+    name: HVAC Drying Hours Today
+    entity_id: sensor.hvac_action
+    state: "drying"
+    type: time
+    start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+    end: "{{ now() }}"
+
+  - platform: history_stats
+    name: HVAC Preheating Hours Today
+    entity_id: sensor.hvac_action
+    state: "preheating"
+    type: time
+    start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+    end: "{{ now() }}"
+
+  - platform: history_stats
+    name: HVAC Active Hours Today
+    entity_id: sensor.hvac_action
+    state: "idle"
+    type: time
+    start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+    end: "{{ now() }}"
