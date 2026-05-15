@@ -1,0 +1,103 @@
+blueprint:
+  name: Sonos Persistent Group
+  description: >
+    Maintains a persistent Sonos speaker group (e.g. "Upstairs") so it is always
+    discoverable by Spotify. When playback is detected on an individual member speaker,
+    that speaker is temporarily removed from the group. When playback stops, it
+    automatically rejoins the group.
+  author: yngpadjuan
+  homeassistant:
+    min_version: "2024.10.0"
+  domain: automation
+  input:
+    group_entity:
+      name: Group Speaker
+      description: >
+        The Sonos speaker that acts as the group coordinator (the one Spotify sees
+        as the group target). This speaker should be the one you grouped others into
+        when registering the group with Spotify.
+      selector:
+        entity:
+          domain: media_player
+          integration: sonos
+
+    member_speakers:
+      name: Member Speakers
+      description: >
+        The individual Sonos speakers that belong to the persistent group.
+        Include all speakers except the group coordinator.
+      selector:
+        entity:
+          domain: media_player
+          integration: sonos
+          multiple: true
+
+    rejoin_delay:
+      name: Rejoin Delay
+      description: >
+        How many minutes to wait after playback stops on an individual speaker
+        before rejoining it to the group. Prevents immediately rejoining if the
+        user is just pausing briefly.
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 60
+          step: 1
+          unit_of_measurement: minutes
+
+trigger:
+  - platform: state
+    entity_id: !input member_speakers
+    to: "playing"
+    id: member_started_playing
+  - platform: state
+    entity_id: !input member_speakers
+    from: "playing"
+    to:
+      - "idle"
+      - "paused"
+    for:
+      minutes: !input rejoin_delay
+    id: member_stopped_playing
+
+variables:
+  group_id: !input group_entity
+  members: !input member_speakers
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: member_started_playing
+          - condition: template
+            value_template: >
+              {{ trigger.to_state.attributes.get('group_members', []) | length <= 1 }}
+        sequence:
+          - alias: "Ungroup speaker from persistent group"
+            action: media_player.unjoin
+            target:
+              entity_id: "{{ trigger.entity_id }}"
+
+      - conditions:
+          - condition: trigger
+            id: member_stopped_playing
+        sequence:
+          - alias: "Wait before rejoining"
+            delay:
+              seconds: 5
+          - alias: "Rejoin speaker to persistent group"
+            action: media_player.join
+            target:
+              entity_id: "{{ group_id }}"
+            data:
+              group_members: "{{ trigger.entity_id }}"
+
+  - alias: "Restore full group if all members are idle"
+    condition: template
+    value_template: >
+      {{ members | map('states') | select('in', ['idle', 'paused']) | list | length == members | length }}
+    enabled: false
+
+mode: parallel
+max: 10
