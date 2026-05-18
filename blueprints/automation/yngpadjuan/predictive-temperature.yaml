@@ -47,18 +47,20 @@ blueprint:
       description: "The configured indoor high temperature threshold (°F) above which cooling is predicted to be needed."
       selector:
         entity:
-          - domain: sensor
-            device_class: temperature
-        multiple: false
+          filter:
+            - domain: sensor
+              device_class: temperature
+          multiple: false
 
     comfort_temp_low:
       name: Set Low Temperature
       description: "The configured indoor low temperature threshold (°F) below which heating is predicted to be needed."
       selector:
         entity:
-          - domain: sensor
-            device_class: temperature
-        multiple: false
+          filter:
+            - domain: sensor
+              device_class: temperature
+          multiple: false
 
     thermal_rate_source:
       name: Thermal Rate Source
@@ -122,12 +124,15 @@ action:
       outdoor_sensor: !input outdoor_temp_sensor
       mobile_app: !input input_mobile_app
       calendar_id: !input input_calendar
-      high_threshold: !input comfort_temp_high
-      low_threshold: !input comfort_temp_low
+      high_entity: !input comfort_temp_high
+      low_entity: !input comfort_temp_low
       rate_source: !input thermal_rate_source
       rate_manual: !input thermal_rate_manual
       hum_weight: !input humidity_weight
       lookahead: !input lookahead_hours
+  - variables:
+      high_threshold: "{{ states(high_entity) | float(75) }}"
+      low_threshold: "{{ states(low_entity) | float(65) }}"
   - variables:
       rate: >
         {% if rate_source == 'auto' %}
