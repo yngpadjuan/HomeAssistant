@@ -1,0 +1,23 @@
+appdaemon:
+  latitude: !secret latitude
+  longitude: !secret longitude
+  elevation: !secret elevation
+  time_zone: !secret time_zone
+  plugins:
+    HASS:
+      type: hass
+      ha_url: !secret ha_url
+      token: !secret appdaemon_token
+
+http:
+  url: http://127.0.0.1:5050
+
+admin:
+
+api:
+
+logs:
+  main_log:
+    filename: /homeassistant/appdaemon/logs/appdaemon.log
+  error_log:
+    filename: /homeassistant/appdaemon/logs/error.log
