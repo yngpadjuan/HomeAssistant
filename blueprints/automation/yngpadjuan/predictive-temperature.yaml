@@ -131,8 +131,18 @@ action:
       hum_weight: !input humidity_weight
       lookahead: !input lookahead_hours
   - variables:
-      high_threshold: "{{ states(high_entity) | float(75) }}"
-      low_threshold: "{{ states(low_entity) | float(65) }}"
+      high_threshold: >
+        {% if high_entity is string and high_entity | regex_match('^[a-z_]+\.[a-z0-9_]+$') %}
+          {{ states(high_entity) | float(75) }}
+        {% else %}
+          {{ high_entity | float(75) }}
+        {% endif %}
+      low_threshold: >
+        {% if low_entity is string and low_entity | regex_match('^[a-z_]+\.[a-z0-9_]+$') %}
+          {{ states(low_entity) | float(65) }}
+        {% else %}
+          {{ low_entity | float(65) }}
+        {% endif %}
   - variables:
       rate: >
         {% if rate_source == 'auto' %}
@@ -279,11 +289,11 @@ action:
       message: >
         {% if cooling_windows | length > 0 %}
         Cooling likely needed during {{ cooling_windows | length }} window(s):
-        {% for w in cooling_windows %}{{ as_datetime(w.start) | timestamp_custom('%-m/%-d %-I%p') }}–{{ as_datetime(w.end) | timestamp_custom('%-I%p') }} (peak {{ w.peak }}°F){% if not loop.last %}, {% endif %}{% endfor %}.
+        {% for w in cooling_windows %}{{ as_datetime(w.start) | as_timestamp | timestamp_custom('%-m/%-d %-I%p') }}–{{ as_datetime(w.end) | as_timestamp | timestamp_custom('%-I%p') }} (peak {{ w.peak }}°F){% if not loop.last %}, {% endif %}{% endfor %}.
         {% endif %}
         {% if heating_windows | length > 0 %}
         Heating likely needed during {{ heating_windows | length }} window(s):
-        {% for w in heating_windows %}{{ as_datetime(w.start) | timestamp_custom('%-m/%-d %-I%p') }}–{{ as_datetime(w.end) | timestamp_custom('%-I%p') }} (trough {{ w.trough }}°F){% if not loop.last %}, {% endif %}{% endfor %}.
+        {% for w in heating_windows %}{{ as_datetime(w.start) | as_timestamp | timestamp_custom('%-m/%-d %-I%p') }}–{{ as_datetime(w.end) | as_timestamp | timestamp_custom('%-I%p') }} (trough {{ w.trough }}°F){% if not loop.last %}, {% endif %}{% endfor %}.
         {% endif %}
         Current indoor: {{ current_indoor }}°F, outdoor: {{ current_outdoor }}°F.
 
