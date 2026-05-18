@@ -1,0 +1,21 @@
+template:
+  - sensor:
+      - name: Estimated Indoor Temperature
+        unique_id: estimated_indoor_temperature
+        device_class: temperature
+        unit_of_measurement: "°F"
+        state_class: measurement
+        state: >
+          {% set t_indoor = state_attr('climate.hallway', 'current_temperature') | float(none) %}
+          {% set t_outdoor = states('sensor.hourly_forecast') | float(none) %}
+          {% set rate = states('sensor.observed_thermal_rate') | float(none) %}
+          {% if t_indoor is none or t_outdoor is none or rate is none %}
+            {{ states('sensor.estimated_indoor_temperature') | default('unknown') }}
+          {% else %}
+            {{ (t_indoor + rate * (t_outdoor - t_indoor)) | round(1) }}
+          {% endif %}
+        attributes:
+          current_indoor: "{{ state_attr('climate.hallway', 'current_temperature') | float(0) }}"
+          current_outdoor: "{{ states('sensor.hourly_forecast') | float(0) }}"
+          thermal_rate: "{{ states('sensor.observed_thermal_rate') | float(0) }}"
+          hvac_active: "{{ states('sensor.hvac_action') not in ['idle', 'off'] }}"

@@ -1,4 +1,7 @@
+secrets: /homeassistant/secrets.yaml
+
 appdaemon:
+  app_dir: /homeassistant/appdaemon/apps
   latitude: !secret latitude
   longitude: !secret longitude
   elevation: !secret elevation
@@ -11,13 +14,3 @@ appdaemon:
 
 http:
   url: http://127.0.0.1:5050
-
-admin:
-
-api:
-
-logs:
-  main_log:
-    filename: /homeassistant/appdaemon/logs/appdaemon.log
-  error_log:
-    filename: /homeassistant/appdaemon/logs/error.log
