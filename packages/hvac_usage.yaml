@@ -6,6 +6,26 @@ template:
         unique_id: hvac_action_tracker
         state: "{{ state_attr('climate.hallway', 'hvac_action') | default('idle') }}"
 
+      - name: HVAC Set Temperature High
+        unique_id: hvac_set_temperature_high
+        device_class: temperature
+        unit_of_measurement: "°F"
+        state_class: measurement
+        state: >
+          {% set t = state_attr('climate.hallway', 'target_temp_high') %}
+          {% set t_single = state_attr('climate.hallway', 'temperature') %}
+          {{ (t if t is not none else t_single) | float(0) }}
+
+      - name: HVAC Set Temperature Low
+        unique_id: hvac_set_temperature_low
+        device_class: temperature
+        unit_of_measurement: "°F"
+        state_class: measurement
+        state: >
+          {% set t = state_attr('climate.hallway', 'target_temp_low') %}
+          {% set t_single = state_attr('climate.hallway', 'temperature') %}
+          {{ (t if t is not none else t_single) | float(0) }}
+
 sensor:
   - platform: history_stats
     name: HVAC Heating Hours Today
