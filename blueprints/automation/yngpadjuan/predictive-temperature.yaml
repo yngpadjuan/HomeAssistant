@@ -62,11 +62,24 @@ blueprint:
           max: 85
           step: 0.5
 
-    thermal_rate:
-      name: Thermal Rate
+    thermal_rate_source:
+      name: Thermal Rate Source
       description: >
-        How quickly indoor temperature drifts toward outdoor temperature each hour,
-        expressed as a fraction of the remaining gap (Newton's Law of Cooling).
+        Choose how the thermal rate is determined.
+        "Auto" uses sensor.observed_thermal_rate calculated by AppDaemon from your
+        home's actual history. "Manual" uses the fixed value below.
+      default: auto
+      selector:
+        select:
+          options:
+            - auto
+            - manual
+
+    thermal_rate_manual:
+      name: Thermal Rate (Manual)
+      description: >
+        Used only when Thermal Rate Source is set to "manual".
+        How quickly indoor temperature drifts toward outdoor temperature each hour.
         0.05 = very well insulated (~20 hours to equilibrate).
         0.15 = average home (~7 hours to equilibrate).
         0.30 = poorly insulated (~3 hours to equilibrate).
@@ -113,9 +126,17 @@ action:
       calendar_id: !input input_calendar
       high_threshold: !input comfort_temp_high
       low_threshold: !input comfort_temp_low
-      rate: !input thermal_rate
+      rate_source: !input thermal_rate_source
+      rate_manual: !input thermal_rate_manual
       hum_weight: !input humidity_weight
       lookahead: !input lookahead_hours
+  - variables:
+      rate: >
+        {% if rate_source == 'auto' %}
+          {{ states('sensor.observed_thermal_rate') | float(rate_manual) }}
+        {% else %}
+          {{ rate_manual | float }}
+        {% endif %}
   - variables:
       forecast: "{{ state_attr('sensor.hourly_forecast', 'forecast') }}"
       current_indoor: "{{ state_attr(hvac_id, 'current_temperature') | float(0) }}"

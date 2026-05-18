@@ -1,0 +1,9 @@
+thermal_rate_calculator:
+  module: thermal_rate_calculator
+  class: ThermalRateCalculator
+  indoor_entity: climate.hallway
+  outdoor_entity: sensor.hourly_forecast
+  hvac_action_entity: sensor.hvac_action
+  output_sensor: sensor.observed_thermal_rate
+  lookback_days: 7
+  update_time: "03:00:00"
