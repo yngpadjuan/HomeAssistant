@@ -1,5 +1,14 @@
 template:
-  - sensor:
+  - trigger:
+      - platform: time_pattern
+        minutes: "/5"
+      - platform: state
+        entity_id:
+          - climate.hallway
+          - sensor.hourly_forecast
+          - sensor.observed_thermal_rate
+          - sensor.hvac_action
+    sensor:
       - name: Estimated Indoor Temperature
         unique_id: estimated_indoor_temperature
         device_class: temperature
