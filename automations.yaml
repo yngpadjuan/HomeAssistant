@@ -66,3 +66,22 @@
       comfort_temp_high: 78
       comfort_temp_low: 60
       lookahead_hours: 72
+- id: '1778860634622'
+  alias: Sonos Persistent Group - Upstairs
+  description: ''
+  use_blueprint:
+    path: yngpadjuan/sonos-persistent-group.yaml
+    input:
+      group_entity: media_player.living_room_amp
+      member_speakers:
+      - media_player.kitchen
+- id: '1778860716325'
+  alias: Sonos Persistent Group - Everything
+  description: ''
+  use_blueprint:
+    path: yngpadjuan/sonos-persistent-group.yaml
+    input:
+      group_entity: media_player.living_room_amp
+      member_speakers:
+      - media_player.nomad
+      - media_player.kitchen
