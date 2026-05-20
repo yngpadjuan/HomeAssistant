@@ -28,13 +28,6 @@ blueprint:
               device_class: temperature
           multiple: false
 
-    input_mobile_app:
-      name: Mobile App
-      description: "Select the mobile app to receive notifications."
-      selector:
-        device:
-          integration: mobile_app
-
     input_calendar:
       name: Calendar
       description: "The input calendar to add HVAC required events to."
@@ -122,7 +115,6 @@ action:
   - variables:
       hvac_id: !input hvac_entity
       outdoor_sensor: !input outdoor_temp_sensor
-      mobile_app: !input input_mobile_app
       calendar_id: !input input_calendar
       high_entity: !input comfort_temp_high
       low_entity: !input comfort_temp_low
@@ -277,24 +269,5 @@ action:
             start_date_time: "{{ repeat.item.start }}"
             end_date_time: "{{ repeat.item.end }}"
 
-  - condition: template
-    value_template: "{{ cooling_windows | length > 0 or heating_windows | length > 0 }}"
-
-  - alias: "Send forecast notification"
-    action: notify.send_message
-    target:
-      device_id: "{{ mobile_app }}"
-    data:
-      title: "HVAC Prediction Update"
-      message: >
-        {% if cooling_windows | length > 0 %}
-        Cooling likely needed during {{ cooling_windows | length }} window(s):
-        {% for w in cooling_windows %}{{ as_datetime(w.start) | as_timestamp | timestamp_custom('%-m/%-d %-I%p') }}–{{ as_datetime(w.end) | as_timestamp | timestamp_custom('%-I%p') }} (peak {{ w.peak }}°F){% if not loop.last %}, {% endif %}{% endfor %}.
-        {% endif %}
-        {% if heating_windows | length > 0 %}
-        Heating likely needed during {{ heating_windows | length }} window(s):
-        {% for w in heating_windows %}{{ as_datetime(w.start) | as_timestamp | timestamp_custom('%-m/%-d %-I%p') }}–{{ as_datetime(w.end) | as_timestamp | timestamp_custom('%-I%p') }} (trough {{ w.trough }}°F){% if not loop.last %}, {% endif %}{% endfor %}.
-        {% endif %}
-        Current indoor: {{ current_indoor }}°F, outdoor: {{ current_outdoor }}°F.
 
 mode: single

@@ -6,4 +6,5 @@ thermal_rate_calculator:
   hvac_action_entity: sensor.hvac_action
   output_sensor: sensor.observed_thermal_rate
   lookback_days: 7
+  cooldown_hours: 1
   update_time: "03:00:00"

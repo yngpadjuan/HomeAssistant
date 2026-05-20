@@ -1,0 +1,166 @@
+input_number:
+  hvac_prediction_lookahead_hours:
+    name: HVAC Prediction Lookahead Hours
+    min: 1
+    max: 72
+    step: 1
+    initial: 48
+    unit_of_measurement: hours
+    icon: mdi:clock-outline
+
+  hvac_prediction_humidity_weight:
+    name: HVAC Prediction Humidity Weight
+    min: 0.0
+    max: 1.0
+    step: 0.05
+    initial: 0.5
+    icon: mdi:water-percent
+
+template:
+  - trigger:
+      - platform: time_pattern
+        hours: "/1"
+      - platform: homeassistant
+        event: start
+      - platform: state
+        entity_id:
+          - sensor.hourly_forecast
+          - sensor.observed_thermal_rate
+          - sensor.hvac_set_temperature_high
+          - sensor.hvac_set_temperature_low
+          - input_number.hvac_prediction_lookahead_hours
+          - input_number.hvac_prediction_humidity_weight
+
+    variables:
+      current_indoor: "{{ state_attr('climate.hallway', 'current_temperature') | float(0) }}"
+      current_outdoor: "{{ states('sensor.hourly_forecast') | float(0) }}"
+      rate: "{{ states('sensor.observed_thermal_rate') | float(0.1) }}"
+      high_threshold: "{{ states('sensor.hvac_set_temperature_high') | float(75) }}"
+      low_threshold: "{{ states('sensor.hvac_set_temperature_low') | float(65) }}"
+      lookahead: "{{ states('input_number.hvac_prediction_lookahead_hours') | int(48) }}"
+      hum_weight: "{{ states('input_number.hvac_prediction_humidity_weight') | float(0.5) }}"
+      forecast: "{{ state_attr('sensor.hourly_forecast', 'forecast') }}"
+      cooling_windows: >
+        {% set upcoming = forecast[:lookahead | int] %}
+        {% set ns = namespace(t_indoor=current_indoor, windows=[], start=none, peak=none, end=none) %}
+        {% for hour in upcoming %}
+          {% set t_out = hour.temperature | float %}
+          {% set humidity = hour.humidity | float(50) %}
+          {% set ns.t_indoor = (ns.t_indoor + rate * (t_out - ns.t_indoor)) | round(2) %}
+          {% set heat_adj = hum_weight * (humidity - 40) * 0.025 if humidity > 40 else 0 %}
+          {% set t_feels = (ns.t_indoor + heat_adj) | round(1) %}
+          {% set dt = as_datetime(hour.datetime) %}
+          {% if t_feels > high_threshold %}
+            {% if ns.start is none %}
+              {% set ns.start = dt %}
+              {% set ns.peak = t_feels %}
+            {% else %}
+              {% set ns.peak = [ns.peak, t_feels] | max %}
+            {% endif %}
+            {% set ns.end = dt %}
+          {% else %}
+            {% if ns.start is not none %}
+              {% set ns.windows = ns.windows + [{'start': ns.start.isoformat(), 'end': (ns.end + timedelta(hours=1)).isoformat(), 'peak': ns.peak}] %}
+              {% set ns.start = none %}
+              {% set ns.peak = none %}
+              {% set ns.end = none %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        {% if ns.start is not none %}
+          {% set ns.windows = ns.windows + [{'start': ns.start.isoformat(), 'end': (ns.end + timedelta(hours=1)).isoformat(), 'peak': ns.peak}] %}
+        {% endif %}
+        {{ ns.windows }}
+      heating_windows: >
+        {% set upcoming = forecast[:lookahead | int] %}
+        {% set ns = namespace(t_indoor=current_indoor, windows=[], start=none, trough=none, end=none) %}
+        {% for hour in upcoming %}
+          {% set t_out = hour.temperature | float %}
+          {% set ns.t_indoor = (ns.t_indoor + rate * (t_out - ns.t_indoor)) | round(2) %}
+          {% set dt = as_datetime(hour.datetime) %}
+          {% if ns.t_indoor < low_threshold %}
+            {% if ns.start is none %}
+              {% set ns.start = dt %}
+              {% set ns.trough = ns.t_indoor %}
+            {% else %}
+              {% set ns.trough = [ns.trough, ns.t_indoor] | min %}
+            {% endif %}
+            {% set ns.end = dt %}
+          {% else %}
+            {% if ns.start is not none %}
+              {% set ns.windows = ns.windows + [{'start': ns.start.isoformat(), 'end': (ns.end + timedelta(hours=1)).isoformat(), 'trough': ns.trough}] %}
+              {% set ns.start = none %}
+              {% set ns.trough = none %}
+              {% set ns.end = none %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        {% if ns.start is not none %}
+          {% set ns.windows = ns.windows + [{'start': ns.start.isoformat(), 'end': (ns.end + timedelta(hours=1)).isoformat(), 'trough': ns.trough}] %}
+        {% endif %}
+        {{ ns.windows }}
+
+    sensor:
+      - name: HVAC Prediction Status
+        unique_id: hvac_prediction_status
+        icon: mdi:home-thermometer
+        state: >
+          {% set c = cooling_windows | length > 0 %}
+          {% set h = heating_windows | length > 0 %}
+          {% if c and h %}cooling_and_heating
+          {% elif c %}cooling
+          {% elif h %}heating
+          {% else %}none{% endif %}
+        attributes:
+          cooling_windows: "{{ cooling_windows }}"
+          heating_windows: "{{ heating_windows }}"
+          thermal_rate_used: "{{ rate }}"
+          computed_at: "{{ now().isoformat() }}"
+
+      - name: Hours Until Cooling Needed
+        unique_id: hvac_hours_until_cooling
+        icon: mdi:snowflake-thermometer
+        unit_of_measurement: h
+        state: >
+          {% if cooling_windows | length > 0 %}
+            {{ ((as_datetime(cooling_windows[0].start) - now()).total_seconds() / 3600) | round(1) | max(0) }}
+          {% else %}
+            -1
+          {% endif %}
+
+      - name: Next Cooling Window Peak
+        unique_id: hvac_next_cooling_peak
+        device_class: temperature
+        unit_of_measurement: "°F"
+        state: >
+          {{ cooling_windows[0].peak if cooling_windows | length > 0 else 'unknown' }}
+
+      - name: Next Cooling Window Start
+        unique_id: hvac_next_cooling_start
+        device_class: timestamp
+        state: >
+          {{ as_datetime(cooling_windows[0].start) if cooling_windows | length > 0 else 'unknown' }}
+
+      - name: Hours Until Heating Needed
+        unique_id: hvac_hours_until_heating
+        icon: mdi:fire-thermometer
+        unit_of_measurement: h
+        state: >
+          {% if heating_windows | length > 0 %}
+            {{ ((as_datetime(heating_windows[0].start) - now()).total_seconds() / 3600) | round(1) | max(0) }}
+          {% else %}
+            -1
+          {% endif %}
+
+      - name: Next Heating Window Trough
+        unique_id: hvac_next_heating_trough
+        device_class: temperature
+        unit_of_measurement: "°F"
+        state: >
+          {{ heating_windows[0].trough if heating_windows | length > 0 else 'unknown' }}
+
+      - name: Next Heating Window Start
+        unique_id: hvac_next_heating_start
+        device_class: timestamp
+        state: >
+          {{ as_datetime(heating_windows[0].start) if heating_windows | length > 0 else 'unknown' }}
