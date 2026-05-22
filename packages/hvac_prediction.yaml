@@ -132,14 +132,16 @@ template:
         unique_id: hvac_next_cooling_peak
         device_class: temperature
         unit_of_measurement: "°F"
+        availability: "{{ cooling_windows | length > 0 }}"
         state: >
-          {{ cooling_windows[0].peak if cooling_windows | length > 0 else 'unknown' }}
+          {{ cooling_windows[0].peak if cooling_windows | length > 0 else none }}
 
       - name: Next Cooling Window Start
         unique_id: hvac_next_cooling_start
         device_class: timestamp
+        availability: "{{ cooling_windows | length > 0 }}"
         state: >
-          {{ as_datetime(cooling_windows[0].start) if cooling_windows | length > 0 else 'unknown' }}
+          {{ as_datetime(cooling_windows[0].start).isoformat() if cooling_windows | length > 0 else none }}
 
       - name: Hours Until Heating Needed
         unique_id: hvac_hours_until_heating
@@ -156,11 +158,13 @@ template:
         unique_id: hvac_next_heating_trough
         device_class: temperature
         unit_of_measurement: "°F"
+        availability: "{{ heating_windows | length > 0 }}"
         state: >
-          {{ heating_windows[0].trough if heating_windows | length > 0 else 'unknown' }}
+          {{ heating_windows[0].trough if heating_windows | length > 0 else none }}
 
       - name: Next Heating Window Start
         unique_id: hvac_next_heating_start
         device_class: timestamp
+        availability: "{{ heating_windows | length > 0 }}"
         state: >
-          {{ as_datetime(heating_windows[0].start) if heating_windows | length > 0 else 'unknown' }}
+          {{ as_datetime(heating_windows[0].start).isoformat() if heating_windows | length > 0 else none }}
