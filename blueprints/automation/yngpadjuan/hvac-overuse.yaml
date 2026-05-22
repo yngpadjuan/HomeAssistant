@@ -44,21 +44,21 @@ blueprint:
           step: 1
           unit_of_measurement: hours
 
-variables:
-  trigger_hvac_id: !input hvac_entity
-
 trigger:
-  - platform: template
-    value_template: >
-      {% set setpoint = state_attr(trigger_hvac_id, 'temperature') | float(none) %}
-      {% set setpoint_high = state_attr(trigger_hvac_id, 'target_temp_high') | float(none) %}
-      {% set effective_setpoint = setpoint if setpoint is not none else setpoint_high %}
-      {% set room = state_attr(trigger_hvac_id, 'current_temperature') | float(none) %}
-      {{ effective_setpoint is not none and room is not none and room > effective_setpoint }}
+  - platform: state
+    entity_id: !input hvac_entity
     for:
       hours: !input overuse_threshold
 
-condition: []
+condition:
+  - condition: template
+    value_template: >
+      {% set hvac_id = trigger.entity_id %}
+      {% set setpoint = state_attr(hvac_id, 'temperature') | float(none) %}
+      {% set setpoint_high = state_attr(hvac_id, 'target_temp_high') | float(none) %}
+      {% set effective_setpoint = setpoint if setpoint is not none else setpoint_high %}
+      {% set room = state_attr(hvac_id, 'current_temperature') | float(none) %}
+      {{ effective_setpoint is not none and room is not none and room > effective_setpoint }}
 
 actions:
   - variables:
