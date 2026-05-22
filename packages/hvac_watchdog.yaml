@@ -1,0 +1,19 @@
+alert:
+  hvac_sensor_stale:
+    name: HVAC Sensor Stale
+    message: "climate.hallway has not reported any changes in over 24 hours. The sensor may be offline or unresponsive."
+    done_message: "climate.hallway is reporting again."
+    entity_id: binary_sensor.hvac_hallway_stale
+    state: "on"
+    repeat: 360
+    can_acknowledge: true
+    notifiers:
+      - persistent_notification
+
+template:
+  - binary_sensor:
+      - name: HVAC Hallway Stale
+        unique_id: hvac_hallway_stale
+        device_class: problem
+        state: >
+          {{ (now() - states.climate.hallway.last_changed).total_seconds() > 86400 }}
