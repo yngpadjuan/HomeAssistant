@@ -22,9 +22,7 @@ template:
         unit_of_measurement: "°F"
         state_class: measurement
         state: >
-          {% set t = state_attr('climate.hallway', 'target_temp_low') %}
-          {% set t_single = state_attr('climate.hallway', 'temperature') %}
-          {{ (t if t is not none else t_single) | float(0) }}
+          {{ state_attr('climate.hallway', 'target_temp_low') | float(65) }}
 
 sensor:
   - platform: history_stats
