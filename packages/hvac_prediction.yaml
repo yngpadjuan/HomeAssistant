@@ -168,3 +168,44 @@ template:
         availability: "{{ heating_windows | length > 0 }}"
         state: >
           {{ as_datetime(heating_windows[0].start).isoformat() if heating_windows | length > 0 else none }}
+
+      - name: Predicted Indoor High Today
+        unique_id: hvac_predicted_indoor_high_today
+        device_class: temperature
+        unit_of_measurement: "°F"
+        state_class: measurement
+        state: >
+          {% set today = now().strftime('%Y-%m-%d') %}
+          {% set upcoming = forecast | selectattr('datetime', 'defined') | list %}
+          {% set ns = namespace(t_indoor=current_indoor, high=current_indoor) %}
+          {% for hour in upcoming %}
+            {% set day = as_datetime(hour.datetime).strftime('%Y-%m-%d') %}
+            {% if day == today %}
+              {% set t_out = hour.temperature | float %}
+              {% set humidity = hour.humidity | float(50) %}
+              {% set ns.t_indoor = (ns.t_indoor + rate * (t_out - ns.t_indoor)) | round(2) %}
+              {% set heat_adj = hum_weight * (humidity - 40) * 0.025 if humidity > 40 else 0 %}
+              {% set t_feels = (ns.t_indoor + heat_adj) | round(1) %}
+              {% set ns.high = [ns.high, t_feels] | max %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.high | round(1) }}
+
+      - name: Predicted Indoor Low Today
+        unique_id: hvac_predicted_indoor_low_today
+        device_class: temperature
+        unit_of_measurement: "°F"
+        state_class: measurement
+        state: >
+          {% set today = now().strftime('%Y-%m-%d') %}
+          {% set upcoming = forecast | selectattr('datetime', 'defined') | list %}
+          {% set ns = namespace(t_indoor=current_indoor, low=current_indoor) %}
+          {% for hour in upcoming %}
+            {% set day = as_datetime(hour.datetime).strftime('%Y-%m-%d') %}
+            {% if day == today %}
+              {% set t_out = hour.temperature | float %}
+              {% set ns.t_indoor = (ns.t_indoor + rate * (t_out - ns.t_indoor)) | round(2) %}
+              {% set ns.low = [ns.low, ns.t_indoor] | min %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.low | round(1) }}
