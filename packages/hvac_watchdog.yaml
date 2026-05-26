@@ -16,4 +16,4 @@ template:
         unique_id: hvac_hallway_stale
         device_class: problem
         state: >
-          {{ (now() - states.climate.hallway.last_changed).total_seconds() > 86400 }}
+          {{ (now() - states.climate.hallway.last_updated).total_seconds() > 86400 }}
