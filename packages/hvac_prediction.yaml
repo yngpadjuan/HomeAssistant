@@ -45,14 +45,19 @@ template:
           {{ [] }}
         {% else %}
         {% set upcoming = forecast[:lookahead | int] %}
-        {% set ns = namespace(t_indoor=current_indoor, windows=[], start=none, peak=none, end=none) %}
+        {% set ns = namespace(t_indoor=current_indoor, windows=[], start=none, peak=none, end=none, current_day=now().strftime('%Y-%m-%d')) %}
         {% for hour in upcoming %}
+          {% set dt = as_datetime(hour.datetime) %}
+          {% set day = dt.strftime('%Y-%m-%d') %}
+          {% if day != ns.current_day %}
+            {% set ns.t_indoor = current_indoor %}
+            {% set ns.current_day = day %}
+          {% endif %}
           {% set t_out = hour.temperature | float %}
           {% set humidity = hour.humidity | float(50) %}
           {% set ns.t_indoor = (ns.t_indoor + rate * (t_out - ns.t_indoor)) | round(2) %}
           {% set heat_adj = hum_weight * (humidity - 40) * 0.025 if humidity > 40 else 0 %}
           {% set t_feels = (ns.t_indoor + heat_adj) | round(1) %}
-          {% set dt = as_datetime(hour.datetime) %}
           {% if t_feels > high_threshold %}
             {% if ns.start is none %}
               {% set ns.start = dt %}
@@ -80,11 +85,16 @@ template:
           {{ [] }}
         {% else %}
         {% set upcoming = forecast[:lookahead | int] %}
-        {% set ns = namespace(t_indoor=current_indoor, windows=[], start=none, trough=none, end=none) %}
+        {% set ns = namespace(t_indoor=current_indoor, windows=[], start=none, trough=none, end=none, current_day=now().strftime('%Y-%m-%d')) %}
         {% for hour in upcoming %}
+          {% set dt = as_datetime(hour.datetime) %}
+          {% set day = dt.strftime('%Y-%m-%d') %}
+          {% if day != ns.current_day %}
+            {% set ns.t_indoor = current_indoor %}
+            {% set ns.current_day = day %}
+          {% endif %}
           {% set t_out = hour.temperature | float %}
           {% set ns.t_indoor = (ns.t_indoor + rate * (t_out - ns.t_indoor)) | round(2) %}
-          {% set dt = as_datetime(hour.datetime) %}
           {% if ns.t_indoor < low_threshold %}
             {% if ns.start is none %}
               {% set ns.start = dt %}
