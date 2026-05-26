@@ -32,8 +32,8 @@ template:
           - input_number.hvac_prediction_humidity_weight
 
     variables:
-      current_indoor: "{{ state_attr('climate.hallway', 'current_temperature') | float(0) }}"
-      current_outdoor: "{{ states('sensor.hourly_forecast') | float(0) }}"
+      current_indoor: "{{ state_attr('climate.hallway', 'current_temperature') | float(none) }}"
+      current_outdoor: "{{ states('sensor.hourly_forecast') | float(none) }}"
       rate: "{{ states('sensor.observed_thermal_rate') | float(0.1) }}"
       high_threshold: "{{ states('sensor.hvac_set_temperature_high') | float(75) }}"
       low_threshold: "{{ states('sensor.hvac_set_temperature_low') | float(65) }}"
@@ -41,6 +41,9 @@ template:
       hum_weight: "{{ states('input_number.hvac_prediction_humidity_weight') | float(0.5) }}"
       forecast: "{{ state_attr('sensor.hourly_forecast', 'forecast') }}"
       cooling_windows: >
+        {% if current_indoor is none or current_outdoor is none %}
+          {{ [] }}
+        {% else %}
         {% set upcoming = forecast[:lookahead | int] %}
         {% set ns = namespace(t_indoor=current_indoor, windows=[], start=none, peak=none, end=none) %}
         {% for hour in upcoming %}
@@ -71,7 +74,11 @@ template:
           {% set ns.windows = ns.windows + [{'start': ns.start.isoformat(), 'end': (ns.end + timedelta(hours=1)).isoformat(), 'peak': ns.peak}] %}
         {% endif %}
         {{ ns.windows }}
+        {% endif %}
       heating_windows: >
+        {% if current_indoor is none or current_outdoor is none %}
+          {{ [] }}
+        {% else %}
         {% set upcoming = forecast[:lookahead | int] %}
         {% set ns = namespace(t_indoor=current_indoor, windows=[], start=none, trough=none, end=none) %}
         {% for hour in upcoming %}
@@ -99,6 +106,7 @@ template:
           {% set ns.windows = ns.windows + [{'start': ns.start.isoformat(), 'end': (ns.end + timedelta(hours=1)).isoformat(), 'trough': ns.trough}] %}
         {% endif %}
         {{ ns.windows }}
+        {% endif %}
 
     sensor:
       - name: HVAC Prediction Status
