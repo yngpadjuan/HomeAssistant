@@ -207,7 +207,7 @@ template:
               {% set ns.high = [ns.high, t_feels] | max %}
             {% endif %}
           {% endfor %}
-          {{ ns.high | round(0) }}
+          {{ (ns.high | round(0)) | int }}
 
       - name: Predicted Indoor Low Today
         unique_id: hvac_predicted_indoor_low_today
@@ -229,4 +229,4 @@ template:
               {% set ns.low = [ns.low, t_feels] | min %}
             {% endif %}
           {% endfor %}
-          {{ ns.low | round(0) }}
+          {{ (ns.low | round(0)) | int }}
