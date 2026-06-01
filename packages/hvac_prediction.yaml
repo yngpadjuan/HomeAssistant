@@ -147,6 +147,12 @@ template:
           low_threshold: "{{ low_threshold }}"
           thermal_rate_used: "{{ rate }}"
           computed_at: "{{ now().isoformat() }}"
+          icon_emoji: >
+            {% set status = states('sensor.hvac_prediction_status') %}
+            {% if status == 'cooling' %}❄️
+            {% elif status == 'heating' %}🔥
+            {% elif status == 'cooling_and_heating' %}🌡️
+            {% else %}🏠{% endif %}
 
       - name: Hours Until Cooling Needed
         unique_id: hvac_hours_until_cooling
