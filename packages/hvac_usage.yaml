@@ -24,6 +24,15 @@ template:
         state: >
           {{ state_attr('climate.hallway', 'target_temp_low') | float(65) }}
 
+      - name: HVAC Total Active Hours Last 24h
+        unique_id: hvac_total_active_hours_last_24h
+        unit_of_measurement: h
+        state_class: measurement
+        icon: mdi:clock-check
+        state: >
+          {{ (states('sensor.hvac_heating_hours_rolling_24h') | float(0)
+            + states('sensor.hvac_cooling_hours_rolling_24h') | float(0)) | round(2) }}
+
 sensor:
   - platform: history_stats
     name: HVAC Heating Hours Today
@@ -71,4 +80,20 @@ sensor:
     state: "idle"
     type: time
     start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+    end: "{{ now() }}"
+
+  - platform: history_stats
+    name: HVAC Heating Hours Rolling 24h
+    entity_id: sensor.hvac_action
+    state: "heating"
+    type: time
+    start: "{{ now() - timedelta(hours=24) }}"
+    end: "{{ now() }}"
+
+  - platform: history_stats
+    name: HVAC Cooling Hours Rolling 24h
+    entity_id: sensor.hvac_action
+    state: "cooling"
+    type: time
+    start: "{{ now() - timedelta(hours=24) }}"
     end: "{{ now() }}"
