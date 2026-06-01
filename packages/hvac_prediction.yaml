@@ -121,17 +121,30 @@ template:
     sensor:
       - name: HVAC Prediction Status
         unique_id: hvac_prediction_status
-        icon: mdi:home-thermometer
+        icon: >
+          {% set status = states('sensor.hvac_prediction_status') %}
+          {% if status == 'cooling' %}mdi:snowflake-thermometer
+          {% elif status == 'heating' %}mdi:fire-thermometer
+          {% elif status == 'cooling_and_heating' %}mdi:home-thermometer
+          {% else %}mdi:home-thermometer-off{% endif %}
         state: >
-          {% set c = cooling_windows | length > 0 %}
-          {% set h = heating_windows | length > 0 %}
-          {% if c and h %}cooling_and_heating
-          {% elif c %}cooling
-          {% elif h %}heating
-          {% else %}none{% endif %}
+          {% set predicted_high = states('sensor.predicted_indoor_high_today') | float(none) %}
+          {% set predicted_low = states('sensor.predicted_indoor_low_today') | float(none) %}
+          {% if predicted_high is none or predicted_low is none %}
+            unknown
+          {% else %}
+            {% set needs_cooling = predicted_high > high_threshold %}
+            {% set needs_heating = predicted_low < low_threshold %}
+            {% if needs_cooling and needs_heating %}cooling_and_heating
+            {% elif needs_cooling %}cooling
+            {% elif needs_heating %}heating
+            {% else %}none{% endif %}
+          {% endif %}
         attributes:
-          cooling_windows: "{{ cooling_windows }}"
-          heating_windows: "{{ heating_windows }}"
+          predicted_high_today: "{{ states('sensor.predicted_indoor_high_today') }}"
+          predicted_low_today: "{{ states('sensor.predicted_indoor_low_today') }}"
+          high_threshold: "{{ high_threshold }}"
+          low_threshold: "{{ low_threshold }}"
           thermal_rate_used: "{{ rate }}"
           computed_at: "{{ now().isoformat() }}"
 
