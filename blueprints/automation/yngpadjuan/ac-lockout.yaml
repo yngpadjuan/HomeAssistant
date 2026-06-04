@@ -1,0 +1,167 @@
+blueprint:
+  name: AC Lockout
+  author: yngpadjuan
+  homeassistant:
+    min_version: "2024.10.0"
+  description: >
+    Prevents the AC from running when the outdoor temperature drops below a
+    configurable threshold. If cooling activates while outdoor temp is below
+    the threshold, the HVAC is switched to fan-only mode. Restores the previous
+    mode when outdoor temp rises back above the threshold.
+  domain: automation
+  input:
+    hvac_entity:
+      name: HVAC System
+      description: "The climate entity to monitor and control."
+      selector:
+        entity:
+          domain: climate
+
+    outdoor_temp_sensor:
+      name: Outdoor Temperature Sensor
+      description: "Sensor to monitor outdoor temperature."
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: temperature
+          multiple: false
+
+    lockout_temp:
+      name: Lockout Temperature
+      description: "AC will be prevented from running when outdoor temperature is below this value (°F)."
+      default: 62
+      selector:
+        number:
+          min: 32
+          max: 80
+          step: 1
+          unit_of_measurement: "°F"
+
+    lockout_preset:
+      name: Lockout Preset
+      description: "The HVAC preset to switch to when AC is locked out."
+      default: eco
+      selector:
+        select:
+          options:
+            - eco
+            - away
+            - "off"
+          custom_value: true
+
+    restore_mode:
+      name: Restore Mode
+      description: "The HVAC mode to restore when outdoor temperature rises back above the lockout threshold."
+      default: cool
+      selector:
+        select:
+          options:
+            - cool
+            - heat_cool
+            - auto
+          custom_value: true
+
+    input_mobile_app:
+      name: Mobile App
+      description: "Select the mobile app to receive notifications."
+      selector:
+        device:
+          integration: mobile_app
+
+trigger:
+  - platform: numeric_state
+    entity_id: !input outdoor_temp_sensor
+    below: !input lockout_temp
+    id: temp_dropped
+  - platform: numeric_state
+    entity_id: !input outdoor_temp_sensor
+    above: !input lockout_temp
+    id: temp_recovered
+  - platform: state
+    entity_id: !input hvac_entity
+    to: "cool"
+    id: cooling_activated
+
+variables:
+  hvac_id: !input hvac_entity
+  outdoor_sensor: !input outdoor_temp_sensor
+  threshold: !input lockout_temp
+  lockout_preset: !input lockout_preset
+  restore_mode: !input restore_mode
+  mobile_app: !input input_mobile_app
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: temp_dropped
+          - condition: state
+            entity_id: !input hvac_entity
+            state: "cool"
+          - condition: template
+            value_template: >
+              {{ state_attr(hvac_id, 'current_temperature') | float(0) >
+                 state_attr(hvac_id, 'target_temp_high') | float(0) }}
+        sequence:
+          - alias: "Switch to lockout preset"
+            action: climate.set_preset_mode
+            target:
+              entity_id: "{{ hvac_id }}"
+            data:
+              preset_mode: "{{ lockout_preset }}"
+          - action: notify.send_message
+            target:
+              device_id: "{{ mobile_app }}"
+            data:
+              title: "AC Lockout Active"
+              message: >
+                Outdoor temperature ({{ states(outdoor_sensor) }}°F) dropped below
+                {{ threshold }}°F. HVAC set to {{ lockout_preset }} preset.
+
+      - conditions:
+          - condition: trigger
+            id: cooling_activated
+          - condition: numeric_state
+            entity_id: !input outdoor_temp_sensor
+            below: !input lockout_temp
+          - condition: template
+            value_template: >
+              {{ state_attr(hvac_id, 'current_temperature') | float(0) >
+                 state_attr(hvac_id, 'target_temp_high') | float(0) }}
+        sequence:
+          - alias: "Block cooling attempt"
+            action: climate.set_preset_mode
+            target:
+              entity_id: "{{ hvac_id }}"
+            data:
+              preset_mode: "{{ lockout_preset }}"
+          - action: notify.send_message
+            target:
+              device_id: "{{ mobile_app }}"
+            data:
+              title: "AC Lockout Active"
+              message: >
+                AC was prevented from starting. Outdoor temperature
+                ({{ states(outdoor_sensor) }}°F) is below {{ threshold }}°F.
+
+      - conditions:
+          - condition: trigger
+            id: temp_recovered
+        sequence:
+          - alias: "Restore cooling mode"
+            action: climate.set_hvac_mode
+            target:
+              entity_id: "{{ hvac_id }}"
+            data:
+              hvac_mode: "{{ restore_mode }}"
+          - action: notify.send_message
+            target:
+              device_id: "{{ mobile_app }}"
+            data:
+              title: "AC Lockout Lifted"
+              message: >
+                Outdoor temperature ({{ states(outdoor_sensor) }}°F) has risen above
+                {{ threshold }}°F. HVAC restored to {{ restore_mode }} mode.
+
+mode: single
