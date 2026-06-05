@@ -6,8 +6,8 @@ blueprint:
   description: >
     Prevents the AC from running when the outdoor temperature drops below a
     configurable threshold. If cooling activates while outdoor temp is below
-    the threshold, the HVAC is switched to fan-only mode. Restores the previous
-    mode when outdoor temp rises back above the threshold.
+    the threshold, the HVAC is switched to the lockout preset. Restores the
+    previous mode when outdoor temp rises back above the threshold.
   domain: automation
   input:
     hvac_entity:
@@ -62,6 +62,16 @@ blueprint:
             - auto
           custom_value: true
 
+    lockout_flag:
+      name: Lockout State Helper
+      description: >
+        An input_boolean helper used to track whether the lockout is currently
+        active. Create a helper at Settings → Devices & Services → Helpers →
+        Add Helper → Toggle, then select it here.
+      selector:
+        entity:
+          domain: input_boolean
+
     input_mobile_app:
       name: Mobile App
       description: "Select the mobile app to receive notifications."
@@ -89,6 +99,7 @@ variables:
   threshold: !input lockout_temp
   lockout_preset: !input lockout_preset
   restore_mode: !input restore_mode
+  lockout_flag: !input lockout_flag
   mobile_app: !input input_mobile_app
 
 action:
@@ -103,6 +114,12 @@ action:
             value_template: >
               {{ state_attr(hvac_id, 'current_temperature') | float(0) >
                  state_attr(hvac_id, 'target_temp_high') | float(0) }}
+          - condition: state
+            entity_id: !input lockout_flag
+            state: "off"
+          - condition: template
+            value_template: >
+              {{ state_attr(hvac_id, 'preset_mode') != lockout_preset }}
         sequence:
           - alias: "Switch to lockout preset"
             action: climate.set_preset_mode
@@ -110,6 +127,9 @@ action:
               entity_id: "{{ hvac_id }}"
             data:
               preset_mode: "{{ lockout_preset }}"
+          - action: input_boolean.turn_on
+            target:
+              entity_id: "{{ lockout_flag }}"
           - action: notify.send_message
             target:
               device_id: "{{ mobile_app }}"
@@ -129,6 +149,12 @@ action:
             value_template: >
               {{ state_attr(hvac_id, 'current_temperature') | float(0) >
                  state_attr(hvac_id, 'target_temp_high') | float(0) }}
+          - condition: state
+            entity_id: !input lockout_flag
+            state: "off"
+          - condition: template
+            value_template: >
+              {{ state_attr(hvac_id, 'preset_mode') != lockout_preset }}
         sequence:
           - alias: "Block cooling attempt"
             action: climate.set_preset_mode
@@ -136,6 +162,9 @@ action:
               entity_id: "{{ hvac_id }}"
             data:
               preset_mode: "{{ lockout_preset }}"
+          - action: input_boolean.turn_on
+            target:
+              entity_id: "{{ lockout_flag }}"
           - action: notify.send_message
             target:
               device_id: "{{ mobile_app }}"
@@ -144,10 +173,13 @@ action:
               message: >
                 AC was prevented from starting. Outdoor temperature
                 ({{ states(outdoor_sensor) }}°F) is below {{ threshold }}°F.
-
+     
       - conditions:
           - condition: trigger
             id: temp_recovered
+          - condition: state
+            entity_id: !input lockout_flag
+            state: "on"
         sequence:
           - alias: "Restore cooling mode"
             action: climate.set_hvac_mode
@@ -155,6 +187,9 @@ action:
               entity_id: "{{ hvac_id }}"
             data:
               hvac_mode: "{{ restore_mode }}"
+          - action: input_boolean.turn_off
+            target:
+              entity_id: "{{ lockout_flag }}"
           - action: notify.send_message
             target:
               device_id: "{{ mobile_app }}"
