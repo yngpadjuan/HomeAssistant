@@ -1,0 +1,59 @@
+blueprint:
+  name: Post-Cooling Fan Run
+  author: yngpadjuan
+  homeassistant:
+    min_version: "2024.10.0"
+  description: >
+    When a cooling cycle completes (hvac_action transitions from cooling to
+    idle), runs the fan for a configurable duration to circulate residual cool
+    air before stopping.
+  domain: automation
+  input:
+    hvac_entity:
+      name: HVAC System
+      description: "The climate entity to monitor."
+      selector:
+        entity:
+          domain: climate
+
+    fan_duration:
+      name: Fan Run Duration
+      description: "How long to run the fan after a cooling cycle completes (minutes)."
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 120
+          step: 1
+          unit_of_measurement: min
+
+trigger:
+  - platform: state
+    entity_id: !input hvac_entity
+    attribute: hvac_action
+    from: cooling
+    to: idle
+
+variables:
+  hvac_id: !input hvac_entity
+  fan_duration: !input fan_duration
+
+action:
+  - alias: "Enable fan mode"
+    action: climate.set_fan_mode
+    target:
+      entity_id: "{{ hvac_id }}"
+    data:
+      fan_mode: "on"
+  - alias: "Wait for fan duration"
+    delay:
+      minutes: "{{ fan_duration }}"
+  - alias: "Return fan to auto"
+    action: climate.set_fan_mode
+    target:
+      entity_id: "{{ hvac_id }}"
+    data:
+      fan_mode: "off"
+
+mode: restart
+max_exceeded: silent
