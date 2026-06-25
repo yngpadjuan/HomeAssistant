@@ -17,6 +17,7 @@ http:
   trusted_proxies:
     - 127.0.0.1
 
-resources:
-  - url: /local/mini-graph-card-bundle.js?v=0.13.0
-    type: module
+frontend:
+  extra_module_url:
+    - /local/thermal_comfort_icons.js
+    - /local/mini-graph-card-bundle.js
