@@ -16,3 +16,7 @@ http:
   use_x_forwarded_for: true
   trusted_proxies:
     - 127.0.0.1
+
+resources:
+  - url: /local/mini-graph-card-bundle.js?v=0.13.0
+    type: module
