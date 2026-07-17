@@ -21,3 +21,13 @@ frontend:
   extra_module_url:
     - /local/thermal_comfort_icons.js
     - /local/mini-graph-card-bundle.js
+
+ios:
+  actions:
+    - name: Fred
+      label:
+        text: "Hello, World"
+      icon:
+        icon: earth
+      show_in_carplay: false
+      show_in_watch: true
