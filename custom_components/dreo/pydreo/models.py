@@ -428,11 +428,6 @@ SUPPORTED_DEVICES = {
         preset_modes=[("normal", 1), ("natural", 2), ("sleep", 3), ("reverse", 4)],
         device_ranges={SPEED_RANGE: (1, 12)},
     ),
-    "DR-HCF010S": DreoDeviceDetails(
-        device_type=DreoDeviceType.CEILING_FAN,
-        preset_modes=[("normal", 1), ("natural", 2), ("sleep", 3), ("reverse", 4)],
-        device_ranges={SPEED_RANGE: (1, 12)},
-    ),
     "DR-HCF002S": DreoDeviceDetails(device_type=DreoDeviceType.CEILING_FAN, device_ranges={SPEED_RANGE: (1, 12)}),
     "DR-HCF007S": DreoDeviceDetails(
         device_type=DreoDeviceType.CEILING_FAN,
@@ -446,6 +441,11 @@ SUPPORTED_DEVICES = {
         device_ranges={SPEED_RANGE: (1, 12), "atm_brightness_range": (1, 100), "supports_direct_rgb_color": True},
     ),
     "DR-HCF008S": DreoDeviceDetails(
+        device_type=DreoDeviceType.CEILING_FAN,
+        preset_modes=[("normal", 1), ("natural", 2), ("sleep", 3), ("reverse", 4)],
+        device_ranges={SPEED_RANGE: (1, 12), "atm_brightness_range": (1, 100), "supports_direct_rgb_color": True},
+    ),
+    "DR-HCF010S": DreoDeviceDetails(
         device_type=DreoDeviceType.CEILING_FAN,
         preset_modes=[("normal", 1), ("natural", 2), ("sleep", 3), ("reverse", 4)],
         device_ranges={SPEED_RANGE: (1, 12), "atm_brightness_range": (1, 100), "supports_direct_rgb_color": True},
