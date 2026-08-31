@@ -1,0 +1,683 @@
+"""Dreo API Library."""
+
+# flake8: noqa
+# from .pydreo import PyDreo
+import logging
+import threading
+import sys
+
+import json
+from itertools import chain
+from typing import Callable, Optional, Tuple, TypeAlias
+from asyncio.exceptions import CancelledError
+
+from .constant import *
+from .helpers import Helpers
+from .models import *
+from .commandtransport import CommandTransport
+from .pydreobasedevice import PyDreoBaseDevice, UnknownModelError, UnknownProductError
+from .pydreounknowndevice import PyDreoUnknownDevice
+from .pydreotowerfan import PyDreoTowerFan
+from .pydreoaircirculator import PyDreoAirCirculator
+from .pydreoceilingfan import PyDreoCeilingFan
+from .pydreoairpurifier import PyDreoAirPurifier
+from .pydreoheater import PyDreoHeater
+from .pydreoairconditioner import PyDreoAC
+from .pydreochefmaker import PyDreoChefMaker
+from .pydreohumidifier import PyDreoHumidifier
+from .pydreodehumidifier import PyDreoDehumidifier
+from .pydreoevaporativecooler import PyDreoEvaporativeCooler
+
+_LOGGER = logging.getLogger(__name__)
+
+_COMMAND_ACK_TIMEOUT = 2  # seconds to wait for server to confirm command
+_ACK_METHOD_NAMES = {"control-report", "control-reply"}  # consider fast server reply and later device confirmation as ack
+_MAX_COMMAND_RETRIES = 2  # retry failed commands up to this many times
+
+# Host delayed scheduler: (delay_seconds, work) -> cancel_fn.
+# Home Assistant installs async_call_later; tests inject a manual scheduler.
+ScheduleCallLater: TypeAlias = Callable[[float, Callable[[], None]], Callable[[], None]]
+
+# control-reply is the server echoing what it ACCEPTED, not what the device did:
+# it is unicast to the issuing connection and arrives before (or without) any
+# device execution. Applying it as device state corrupts the local cache when the
+# device doesn't follow through. Only these methods carry actual device state.
+_STATE_METHOD_NAMES = {"report", "control-report"}
+
+_DREO_DEVICE_TYPE_TO_CLASS = {
+    DreoDeviceType.TOWER_FAN: PyDreoTowerFan,
+    DreoDeviceType.AIR_CIRCULATOR: PyDreoAirCirculator,
+    DreoDeviceType.AIR_PURIFIER: PyDreoAirPurifier,
+    DreoDeviceType.CEILING_FAN: PyDreoCeilingFan,
+    DreoDeviceType.HEATER: PyDreoHeater,
+    DreoDeviceType.AIR_CONDITIONER: PyDreoAC,
+    DreoDeviceType.CHEF_MAKER: PyDreoChefMaker,
+    DreoDeviceType.HUMIDIFIER: PyDreoHumidifier,
+    DreoDeviceType.DEHUMIDIFIER: PyDreoDehumidifier,
+    DreoDeviceType.EVAPORATIVE_COOLER: PyDreoEvaporativeCooler,
+}
+
+
+class PyDreo:  # pylint: disable=function-redefined
+    """Dreo API functions.
+
+    Threading model (when used under Home Assistant)
+    ------------------------------------------------
+    - HA entity setters (``set_native_value``, select, etc.) are **sync** and HA
+      typically runs them on **executor threads**, not the event loop.
+    - ``schedule_call_later`` posts delayed work onto the **HA event loop**
+      (``async_call_later``) via a host-installed scheduler, then the settle
+      callback re-enters an **executor job** so ``_send_command`` / websocket
+      I/O never blocks the loop.
+    - WebSocket receive/dispatch runs on the **transport thread** (or its
+      callbacks); device state updates may therefore race with setters and are
+      protected by per-device locks where needed (e.g. fixedconf).
+    - On unload, ``stop_transport`` calls ``device.dispose()`` and the HA
+      config-entry unload path cancels outstanding scheduled handles.
+
+    Without a host scheduler (standalone library / unit tests), delayed work
+    falls back to ``threading.Timer`` (daemon).
+    """
+
+    def __init__(
+        self,
+        username,
+        password,
+        redact=True,
+        debug_test_mode=False,
+        debug_test_mode_payload=None,
+        token=None,
+        region: str | None = None,
+    ) -> None:
+        """Initialize Dreo class with username, password and time zone."""
+        self._transport = CommandTransport(self._transport_consume_message)
+
+        if region in (DREO_AUTH_REGION_NA, DREO_AUTH_REGION_EU):
+            self.auth_region = region
+        else:
+            self.auth_region = DREO_AUTH_REGION_NA
+            if region not in (None, "auto"):
+                _LOGGER.warning("__init__: Invalid auth region %s. Defaulting to %s", region, DREO_AUTH_REGION_NA)
+
+        self._redact = redact
+        if redact:
+            self.redact = redact
+        self.raw_response = None
+        self.username: str = username
+        self.password: str = password
+        self.token = token
+        self.account_id = None
+        self.enabled = False
+        self.in_process = False
+        self._dev_list = {}
+        self._device_list_by_sn = {}
+        self.devices: list[PyDreoBaseDevice] = []
+
+        self.debug_test_mode: bool = debug_test_mode
+        self.debug_test_mode_payload: dict = debug_test_mode_payload
+
+        self._command_condition = threading.Condition()
+        self._pending_command_device: Optional[str] = None
+        self._pending_command_params: Optional[dict] = None
+        self._ack_received: bool = False
+
+        # Host-provided delayed scheduler; see ScheduleCallLater / class docstring.
+        self._schedule_call_later: ScheduleCallLater | None = None
+        # Log once if delayed work falls back to threading.Timer (no host scheduler).
+        self._logged_timer_fallback: bool = False
+
+        if self.debug_test_mode:
+            _LOGGER.error("__init__: Debug Test Mode is enabled!")
+            if self.debug_test_mode_payload is None:
+                _LOGGER.error("__init__: Debug Test Mode payload is None!")
+
+    @property
+    def api_server_region(self) -> str:
+        """Return region."""
+        if self.auth_region == DREO_AUTH_REGION_NA:
+            return DREO_API_REGION_US
+        elif self.auth_region == DREO_AUTH_REGION_EU:
+            return DREO_API_REGION_EU
+        else:
+            _LOGGER.error("api_server_region: Invalid Auth Region: %s", self.auth_region)
+            raise ValueError(f"Invalid Auth Region: {self.auth_region}")
+
+    @property
+    def auto_reconnect(self) -> bool:
+        """Return auto_reconnect option."""
+        return self._transport.auto_reconnect
+
+    @auto_reconnect.setter
+    def auto_reconnect(self, value: bool) -> None:
+        """Set auto_reconnect option."""
+        _LOGGER.debug("auto_reconnect.setter: Setting auto_reconnect to %s", value)
+        self._transport.auto_reconnect = value
+
+    @property
+    def redact(self) -> bool:
+        """Return debug flag."""
+        return self._redact
+
+    @redact.setter
+    def redact(self, new_flag: bool) -> None:
+        """Set debug flag."""
+        if new_flag:
+            Helpers.shouldredact = True
+        elif new_flag is False:
+            Helpers.shouldredact = False
+        self._redact = new_flag
+
+    def add_dev_test(self, new_dev: dict) -> bool:
+        """Test if new device should be added - True = Add."""
+        if "cid" in new_dev:
+            for _, v in self._dev_list.items():
+                for dev in v:
+                    if dev.deviceId == new_dev.get(DEVICEID_KEY):
+                        return False
+        return True
+
+    @staticmethod
+    def set_dev_id(devices: list) -> list:
+        """Return device list, filtering out devices without a deviceId."""
+        return [dev for dev in devices if dev.get("deviceId") is not None]
+
+    def _process_devices(self, dev_list: list) -> bool:
+        """Instantiate Device Objects."""
+        devices = self.set_dev_id(dev_list)
+        _LOGGER.debug("_process_devices: Processing devices")
+        num_devices = 0
+        for _, v in self._dev_list.items():
+            if isinstance(v, list):
+                num_devices += len(v)
+            else:
+                num_devices += 1
+
+        if not devices:
+            _LOGGER.warning("_process_devices: No devices found in api return")
+            return False
+        if num_devices == 0:
+            _LOGGER.debug("_process_devices: New device list initialized")
+        # else:
+        #    self.remove_old_devices(devices)
+
+        # devices[:] = [x for x in devices if self.add_dev_test(x)]
+
+        # detail_keys = ['deviceType', 'deviceName', 'deviceStatus']
+        for dev in devices:
+            # Get the state of the device...separate API call...boo
+            try:
+                model = dev.get("model", None)
+
+                _LOGGER.debug("_process_devices: Found device with model %s", model)
+
+                if model is not None:
+                    # Get the prefix of the model number to match against the supported devices.
+                    # Not all models will have known prefixes.
+                    model_prefix = None
+                    for prefix in SUPPORTED_MODEL_PREFIXES:
+                        if model[: len(prefix) :] == prefix:
+                            model_prefix = prefix
+                            _LOGGER.debug("_process_devices: Prefix %s assigned from model %s", model_prefix, model)
+                            break
+
+                    device_details = None
+                    if model in SUPPORTED_DEVICES:
+                        _LOGGER.debug("_process_devices: Device %s found!", model)
+                        device_details = SUPPORTED_DEVICES[model]
+                    elif model_prefix is not None and model_prefix in SUPPORTED_DEVICES:
+                        _LOGGER.debug("_process_devices: Device %s found! via prefix %s", model, model_prefix)
+                        device_details = SUPPORTED_DEVICES[model_prefix]
+
+                # If device_details is None at this point, we have an unknown device model.
+                # Unsupported/Unknown Device. Load the state, but store it in an "unsupported objects"
+                # list for later use in diagnostics.
+                device_class = None
+
+                if device_details is not None:
+                    device_class = _DREO_DEVICE_TYPE_TO_CLASS.get(device_details.device_type, None)
+                else:
+                    device_details = DreoDeviceDetails(device_type=DreoDeviceType.UNKNOWN)
+
+                if device_class is None:
+                    device_class = PyDreoUnknownDevice
+
+                device: PyDreoBaseDevice = device_class(device_details, dev, self)
+
+                self.load_device_state(device)
+
+                if device_details.override_fn is not None:
+                    device_details.override_fn(device)
+
+                self.devices.append(device)
+
+                self._device_list_by_sn[device.serial_number] = device
+            except UnknownModelError as ume:
+                _LOGGER.warning("_process_devices: Unknown device model: %s", ume)
+                _LOGGER.debug("_process_devices: %s", dev)
+
+        return True
+
+    def load_devices(self) -> bool:
+        """Load devices from API. This is called once upon initialization."""
+        if not self.enabled:
+            return False
+
+        self.in_process = True
+        proc_return = False
+
+        response = None
+
+        if self.debug_test_mode:
+            _LOGGER.debug("load_devices: Debug Test Mode is enabled.  Using test payload.")
+            response = self.debug_test_mode_payload.get("get_devices", None)
+        else:
+            response, _ = self.call_dreo_api(DREO_API_DEVICELIST)
+
+        # Stash the raw response for use by the diagnostics system, so we don't have to pull
+        # logs
+        self.raw_response = response
+
+        if response and Helpers.code_check(response):
+            if DATA_KEY in response and LIST_KEY in response[DATA_KEY]:
+                device_list = response[DATA_KEY][LIST_KEY]
+                proc_return = self._process_devices(device_list)
+            else:
+                _LOGGER.error("load_devices: Device list in response not found")
+        else:
+            _LOGGER.warning("load_devices: Error retrieving device list")
+
+        self.in_process = False
+
+        return proc_return
+
+    def load_device_state(self, device: PyDreoBaseDevice) -> bool:
+        """Load device state from API. This is called once upon initialization for each supported device."""
+        _LOGGER.debug("load_device_state: %s, enabled: %s", device.name, self.enabled)
+        if not self.enabled:
+            return False
+
+        self.in_process = True
+        proc_return = False
+
+        response = None
+
+        if self.debug_test_mode:
+            _LOGGER.debug("load_device_state: Debug Test Mode is enabled.  Using test payload.")
+            response = self.debug_test_mode_payload.get(device.serial_number, None)
+        else:
+            response, _ = self.call_dreo_api(DREO_API_DEVICESTATE, {DEVICESN_KEY: device.serial_number})
+
+        # stash the raw return value from the devicestate api call
+        device.raw_state = response
+
+        if response and Helpers.code_check(response):
+            if DATA_KEY in response and MIXED_KEY in response[DATA_KEY]:
+                device_state = response[DATA_KEY][MIXED_KEY]
+                device.update_state(device_state)
+                proc_return = True
+            else:
+                _LOGGER.error("load_device_state: Mixed state in response not found: %s", device.name)
+        else:
+            _LOGGER.error("load_device_state: Error retrieving device state: %s", device.name)
+
+        self.in_process = False
+
+        return proc_return
+
+    def login(self) -> bool:
+        """Return True if log in request succeeds."""
+
+        if self.debug_test_mode:
+            self.enabled = True
+            _LOGGER.debug("login: Debug Test Mode is enabled.  Skipping login.")
+            return True
+
+        if self.token is not None:
+            # Support token format "token:REGION" (e.g., "abc123:NA" or "abc123:EU")
+            if ":" in self.token:
+                self.token, self.auth_region = self.token.rsplit(":", 1)
+            _LOGGER.debug("login: Token already provided. Skipping login.")
+            self.enabled = True
+            return True
+
+        user_check = isinstance(self.username, str) and len(self.username) > 0
+        pass_check = isinstance(self.password, str) and len(self.password) > 0
+        if user_check is False:
+            _LOGGER.error("login: Username invalid")
+            return False
+        if pass_check is False:
+            _LOGGER.error("login: Password invalid")
+            return False
+        response, status_code = self.call_dreo_api(DREO_API_LOGIN)
+
+        if response is None:
+            status_msg = f"status: {status_code}" if status_code else "no status code"
+            _LOGGER.error("login: No response from Dreo API (%s). Check network connectivity and API endpoint.", status_msg)
+            return False
+
+        if Helpers.code_check(response) and DATA_KEY in response:
+            # get the region code from auth
+            auth_region = response[DATA_KEY][REGION_KEY]
+            _LOGGER.info("login: Dreo Auth reports user region as: %s", auth_region)
+            if auth_region != self.auth_region:
+                _LOGGER.info("login: Dreo Auth reports different region than current; retrying.")
+                self.auth_region = auth_region
+                return self.login()
+            else:
+                self.token = response[DATA_KEY][ACCESS_TOKEN_KEY]
+                self.enabled = True
+                _LOGGER.debug("login: Login successful")
+                return True
+
+        # Provide more detailed error information
+        if response and isinstance(response, dict):
+            error_code = response.get("code", "unknown")
+            error_msg = response.get("msg", "no message")
+            _LOGGER.error("login: Authentication failed - API returned code: %s, message: %s", error_code, error_msg)
+        else:
+            _LOGGER.error("login: Error logging in with username and password - invalid response format")
+        return False
+
+    def get_device_setting(self, device: PyDreoBaseDevice, setting: DreoDeviceSetting) -> bool | int:
+        """Get a device setting from the API."""
+        _LOGGER.debug("get_device_setting: %s(%s), enabled: %s", device.name, setting, self.enabled)
+        if not self.enabled:
+            return None
+
+        self.in_process = True
+        setting_value = None
+        response = None
+
+        if self.debug_test_mode:
+            _LOGGER.debug("get_device_setting: Debug Test Mode is enabled.  Using test payload.")
+            # Look for key format: {serial_number}_{setting_value}
+            lookup_key = f"{device.serial_number}_{setting.value}"
+            response = self.debug_test_mode_payload.get(lookup_key, None)
+        else:
+            response, _ = self.call_dreo_api(DREO_API_SETTING_GET, {DEVICESN_KEY: device.serial_number, DREO_API_SETTING_DATA_KEY: setting})
+
+        if response and Helpers.code_check(response):
+            if DATA_KEY in response:
+                data_node = response[DATA_KEY]
+                if DREO_API_SETTING_DATA_VALUE in data_node:
+                    setting_value = data_node[DREO_API_SETTING_DATA_VALUE]
+                else:
+                    _LOGGER.error("get_device_setting: %s key not found in returned data. %s", DREO_API_SETTING_DATA_VALUE, data_node)
+        else:
+            _LOGGER.error("get_device_setting: Error retrieving device setting: %s:%s", device.name, setting.name)
+
+        self.in_process = False
+
+        return setting_value
+
+    def set_device_setting(self, device: PyDreoBaseDevice, setting: DreoDeviceSetting, value: bool | int) -> None:
+        """Set a device setting from the API."""
+        _LOGGER.debug("set_device_setting: %s(%s=%s), enabled: %s", device.name, setting, value, self.enabled)
+        if not self.enabled:
+            return None
+
+        self.in_process = True
+        proc_return = False
+        response, _ = self.call_dreo_api(
+            DREO_API_SETTING_PUT, {DEVICESN_KEY: device.serial_number, DREO_API_SETTING_DATA_KEY: setting, DREO_API_SETTING_DATA_VALUE: value}
+        )
+
+        # stash the raw return value from the devicestate api call
+        device.raw_state = response
+
+        if response and Helpers.code_check(response):
+            if DATA_KEY in response and MIXED_KEY in response[DATA_KEY]:
+                device_state = response[DATA_KEY][MIXED_KEY]
+                device.update_state(device_state)
+                proc_return = True
+            else:
+                _LOGGER.error(
+                    "set_device_setting: Mixed state in response not found- %s(%s=%s), enabled: %s", device.name, setting, value, self.enabled
+                )
+        else:
+            _LOGGER.error("set_device_setting: Error setting device setting - %s(%s=%s), enabled: %s", device.name, setting, value, self.enabled)
+
+        self.in_process = False
+
+        return proc_return
+
+    def call_dreo_api(self, api: str, json_object: Optional[dict] = None) -> tuple:
+        """Call the Dreo API. This is used for login and the initial device list and states as well
+        as device settings."""
+        _LOGGER.debug("call_dreo_api: Calling Dreo API: {%s}", api)
+        api_url = DREO_API_URL_FORMAT.format(self.api_server_region)
+
+        if json_object is None:
+            json_object = {}
+
+        json_object_full = {**Helpers.req_body(self, api), **json_object}
+
+        response, status_code = Helpers.call_api(
+            api_url,
+            DREO_APIS[api][DREO_API_PATH],
+            DREO_APIS[api][DREO_API_METHOD],
+            json_object_full,
+            Helpers.req_headers(self),
+        )
+
+        # If we got a 401 and this isn't the login call itself, try re-authenticating
+        if status_code == 401 and api != DREO_API_LOGIN:
+            _LOGGER.warning("call_dreo_api: Got 401 for %s - attempting re-login", api)
+            if self._re_login():
+                # Retry the original call with refreshed token
+                json_object_full = {**Helpers.req_body(self, api), **json_object}
+                response, status_code = Helpers.call_api(
+                    api_url,
+                    DREO_APIS[api][DREO_API_PATH],
+                    DREO_APIS[api][DREO_API_METHOD],
+                    json_object_full,
+                    Helpers.req_headers(self),
+                )
+
+        return response, status_code
+
+    def _re_login(self) -> bool:
+        """Re-authenticate to refresh the token. Updates transport if running."""
+        _LOGGER.info("_re_login: Attempting to refresh authentication token")
+        old_token = self.token
+        # Clear token so login() performs a real authentication
+        self.token = None
+        if self.login():
+            _LOGGER.info("_re_login: Re-login successful, token refreshed")
+            # Update the WebSocket transport with the new token
+            if not self.debug_test_mode and self.token != old_token:
+                self._transport.update_token(self.token)
+            return True
+        _LOGGER.error("_re_login: Re-login failed")
+        return False
+
+    def set_schedule_call_later(self, schedule_call_later: ScheduleCallLater | None) -> None:
+        """Install a host delayed-call scheduler (e.g. HA ``async_call_later``).
+
+        See ``ScheduleCallLater`` for the callable shape. Pass ``None`` to restore
+        the standalone ``threading.Timer`` fallback.
+        """
+        self._schedule_call_later = schedule_call_later
+
+    def schedule_call_later(self, delay: float, work: Callable[[], None]) -> Callable[[], None]:
+        """Schedule ``work`` after ``delay`` seconds; return a cancel function.
+
+        Contract (``ScheduleCallLater``):
+            ``(delay_seconds: float, work: Callable[[], None]) -> cancel: Callable[[], None]``
+            - ``cancel()`` is idempotent when possible and must not raise to callers
+              in normal use (host/teardown paths may still swallow cancel errors).
+            - ``work`` may run on a background/executor thread; it must not assume
+              it is on the HA event loop.
+
+        Prefer the host scheduler when installed so Home Assistant owns lifecycle
+        (event-loop timers cancelled on unload). Without a host scheduler (unit
+        tests / standalone library use), fall back to a daemon ``threading.Timer``.
+
+        Parameter is named ``work`` (not ``callback``) so HA host wiring can use
+        ``@callback`` / ``@ha_callback`` without name shadowing.
+
+        Threading: may be called from HA executor threads (entity setters). The
+        host implementation must be thread-safe when posting onto the event loop.
+        """
+        if self._schedule_call_later is not None:
+            return self._schedule_call_later(delay, work)
+
+        if not self._logged_timer_fallback:
+            self._logged_timer_fallback = True
+            _LOGGER.warning(
+                "schedule_call_later: no host scheduler installed; using "
+                "threading.Timer fallback (HA should install async_call_later at "
+                "setup — check logs if this appears under Home Assistant)"
+            )
+
+        timer = threading.Timer(delay, work)
+        timer.daemon = True
+        timer.start()
+        return timer.cancel
+
+    def start_transport(self) -> None:
+        """Initialize the websocket and start transport"""
+        if not self.debug_test_mode:
+            self._transport.start_transport(self.api_server_region, self.token)
+
+    def stop_transport(self) -> None:
+        """Close down the transport socket and dispose device resources."""
+        # Cancel device-owned delayed work before tearing down the WebSocket so
+        # callbacks cannot run after unload.
+        for device in list(self.devices):
+            try:
+                device.dispose()
+            except Exception as ex:  # pylint: disable=broad-except
+                # Teardown must continue even if one device fails to dispose.
+                _LOGGER.debug("stop_transport: dispose failed for %s: %s", device, ex)
+        if not self.debug_test_mode:
+            self._transport.stop_transport()
+
+    def testonly_interrupt_transport(self) -> None:
+        """Close down the transport socket"""
+        self._transport.testonly_interrupt_transport()
+
+    def _transport_consume_message(self, message):
+        _LOGGER.debug("_transport_consume_message: %s", message)
+
+        message_device_sn = message.get("devicesn")
+        message_method = message.get("method")
+        message_reported = message.get("reported")
+
+        # Check for command acknowledgment (pass reported params for matching)
+        self._handle_command_ack(message_device_sn, message_method, message_reported)
+
+        # Existing device update handling
+        if message_device_sn in self._device_list_by_sn:
+            if message_method is not None and message_method not in _STATE_METHOD_NAMES:
+                # control-reply (and any other non-state method) feeds the ack
+                # machinery above but must never be applied as device state.
+                _LOGGER.debug("_transport_consume_message: %s is not a state method; not applying as state", message_method)
+                return
+            device = self._device_list_by_sn[message_device_sn]
+            device.handle_server_update_base(message)
+        else:
+            # Message is to an unknown device, log it out just in case...
+            _LOGGER.debug(
+                "_transport_consume_message: Received message for unknown or unsupported device. SN: %s",
+                message_device_sn,
+            )
+            _LOGGER.debug("_transport_consume_message: Message: %s", message)
+
+    def send_command(self, device: PyDreoBaseDevice, params) -> None:
+        """Send a command to Dreo servers via the WebSocket."""
+        if self.debug_test_mode:
+            _LOGGER.debug("send_command: Debug Test Mode enabled. Simulating ack...")
+            self._transport_consume_message({"devicesn": device.serial_number, "method": "control-report", "reported": params})
+            return
+
+        for attempt in range(_MAX_COMMAND_RETRIES + 1):
+            full_params = {
+                "devicesn": device.serial_number,
+                "method": "control",
+                "params": params,
+                "timestamp": Helpers.api_timestamp(),
+            }
+            content = json.dumps(full_params)
+
+            if attempt > 0:
+                _LOGGER.info("send_command: Retry %d for %s: %s", attempt, device.name, params)
+            else:
+                _LOGGER.debug("send_command: %s", content)
+
+            self._reserve_command_slot(device.serial_number, params)
+
+            try:
+                self._transport.send_message(content)
+            except Exception:  # pylint: disable=broad-except
+                self._release_command_slot()
+                raise
+
+            ack_received = self._wait_for_command_ack(device)
+            if ack_received:
+                return  # Success!
+
+            # Timeout - will retry if attempts remain
+            if attempt < _MAX_COMMAND_RETRIES:
+                _LOGGER.warning("send_command: No ack for %s, will retry...", device.name)
+
+        _LOGGER.warning("send_command: Failed after %d retries for %s", _MAX_COMMAND_RETRIES, device.name)
+
+    def _reserve_command_slot(self, device_sn: str, params: dict) -> None:
+        """Wait until no other command is in-flight, then reserve slot."""
+        _LOGGER.debug("_reserve_command_slot: Waiting for slot, pending=%s", self._pending_command_device)
+        with self._command_condition:
+            while self._pending_command_device is not None:
+                _LOGGER.debug("_reserve_command_slot: Slot busy (pending=%s), waiting...", self._pending_command_device)
+                self._command_condition.wait()
+            self._pending_command_device = device_sn
+            self._pending_command_params = params
+            self._ack_received = False
+            _LOGGER.debug("_reserve_command_slot: Acquired slot for %s with params %s", device_sn, params)
+
+    def _release_command_slot(self) -> None:
+        """Release command slot after error."""
+        with self._command_condition:
+            self._clear_pending_command_locked()
+
+    def _wait_for_command_ack(self, device: PyDreoBaseDevice) -> bool:
+        """Wait for server acknowledgment or timeout. Returns True if ack received."""
+        _LOGGER.debug("_wait_for_command_ack: Waiting for ack from %s", device.name)
+        with self._command_condition:
+            ack_received = self._command_condition.wait_for(
+                lambda: self._ack_received,  # Wait for OUR ack flag, not slot release
+                timeout=_COMMAND_ACK_TIMEOUT,
+            )
+            if not ack_received:
+                _LOGGER.debug("_wait_for_command_ack: Timed out for %s", device.name)
+            else:
+                _LOGGER.debug("_wait_for_command_ack: Ack received for %s", device.name)
+            # Always clear slot when done (success or timeout)
+            self._clear_pending_command_locked()
+            return ack_received
+
+    def _handle_command_ack(self, device_sn: Optional[str], method: Optional[str], reported: Optional[dict]) -> None:
+        """Signal ack received when server sends control-reply/control-report for our device.
+
+        Some Dreo devices (e.g. humidifier) do not echo back the changed parameter
+        in the response payload, so strict param matching would always fail.
+        Any control-reply/control-report for the correct device is therefore treated as an ACK;
+        the actual resulting state is updated separately by handle_server_update.
+        """
+        if device_sn is None or method not in _ACK_METHOD_NAMES:
+            return
+        _LOGGER.debug("_handle_command_ack: Got %s for %s, pending=%s, reported=%s", method, device_sn, self._pending_command_device, reported)
+        with self._command_condition:
+            if self._pending_command_device != device_sn:
+                _LOGGER.debug("_handle_command_ack: Ignoring, pending device is %s", self._pending_command_device)
+                return
+            # Accept any control-reply/control-report for the correct device as an ACK.
+            _LOGGER.debug("_handle_command_ack: Signaling ack for %s, reported=%s", device_sn, reported)
+            self._ack_received = True
+            self._command_condition.notify_all()
+
+    def _clear_pending_command_locked(self) -> None:
+        """Reset pending command (must hold condition lock)."""
+        self._pending_command_device = None
+        self._pending_command_params = None
+        self._command_condition.notify_all()

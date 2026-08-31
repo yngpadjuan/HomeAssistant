@@ -44,28 +44,6 @@
     data:
       brightness_pct: 100
   mode: single
-- id: '1778764984374'
-  alias: HVAC Overuse Guard
-  description: ''
-  use_blueprint:
-    path: yngpadjuan/hvac-overuse.yaml
-    input:
-      hvac_entity: climate.hallway
-      input_mobile_app: 0168cfb1711510e055cfa2c57c9c95e2
-      overuse_threshold: 4
-- id: '1778783931159'
-  alias: Predictive Temperature Control
-  description: ''
-  use_blueprint:
-    path: yngpadjuan/predictive-temperature.yaml
-    input:
-      hvac_entity: climate.hallway
-      outdoor_temp_sensor: sensor.hourly_forecast
-      input_mobile_app: 0168cfb1711510e055cfa2c57c9c95e2
-      input_calendar: calendar.predictive_temperature
-      comfort_temp_high: 78
-      comfort_temp_low: 60
-      lookahead_hours: 72
 - id: '1778860634622'
   alias: Sonos Persistent Group - Upstairs
   description: ''
@@ -75,13 +53,658 @@
       group_entity: media_player.living_room_amp
       member_speakers:
       - media_player.kitchen
+      - media_player.living_room_amp
+      rejoin_delay: 43
 - id: '1778860716325'
   alias: Sonos Persistent Group - Everything
   description: ''
   use_blueprint:
     path: yngpadjuan/sonos-persistent-group.yaml
     input:
-      group_entity: media_player.living_room_amp
+      group_entity: media_player.kitchen
       member_speakers:
       - media_player.nomad
+      - media_player.living_room_amp
+- id: '1779297288009'
+  alias: Predictive Temperature Control
+  description: ''
+  use_blueprint:
+    path: yngpadjuan/predictive-temperature.yaml
+    input:
+      hvac_entity: climate.hallway
+      outdoor_temp_sensor: sensor.nws_39_7743151_105_2329094_kbjc_temperature
+      input_calendar: calendar.predictive_temperature
+      comfort_temp_high: sensor.hvac_set_temperature_high
+      comfort_temp_low: sensor.hvac_set_temperature_low
+      lookahead_hours: 48
+- id: '1779466763663'
+  alias: HVAC Overuse Guard
+  description: ''
+  use_blueprint:
+    path: yngpadjuan/hvac-overuse.yaml
+    input:
+      hvac_entity: climate.hallway
+      input_mobile_app: 0168cfb1711510e055cfa2c57c9c95e2
+      overuse_threshold: 2
+      input_run_fan_time: 2
+- id: '1779829445669'
+  alias: Daily Temp Summary
+  description: ''
+  triggers:
+  - trigger: time
+    at: 05:00:00
+    weekday:
+    - sun
+    - mon
+    - tue
+    - wed
+    - thu
+    - fri
+    - sat
+  conditions: []
+  actions:
+  - action: notify.mobile_app_bermandsey
+    metadata: {}
+    data:
+      title: Daily Indoor Temp Prediction
+      message: '  Indoor Temp: High - {{ states(''sensor.predicted_indoor_high_today'')
+        }}{{ state_attr(''sensor.predicted_indoor_high_today'', ''unit_of_measurement'')}}
+        || Low - {{ states(''sensor.predicted_indoor_low_today'') }}{{ state_attr(''sensor.predicted_indoor_low_today'',
+        ''unit_of_measurement'')}}'
+  mode: single
+- id: '1780673369398'
+  alias: AC Temp Lockout
+  description: ''
+  use_blueprint:
+    path: yngpadjuan/ac-lockout.yaml
+    input:
+      hvac_entity: climate.hallway
+      outdoor_temp_sensor: sensor.nws_39_7743151_105_2329094_kbjc_temperature
+      restore_mode: heat_cool
+      lockout_flag: input_boolean.ac_lockout_active
+      input_mobile_app: 0168cfb1711510e055cfa2c57c9c95e2
+- id: '1780675347749'
+  alias: Post-Cooling Fan Run
+  description: ''
+  use_blueprint:
+    path: yngpadjuan/post-cooling-fan.yaml
+    input:
+      hvac_entity: climate.hallway
+      fan_duration: 15
+- id: '1784136304670'
+  alias: Evening Comfort
+  description: ''
+  triggers:
+  - trigger: time
+    at: 01:00:00
+    weekday:
+    - mon
+    - tue
+    - wed
+    - thu
+    - fri
+  - trigger: time
+    at: 02:00:00
+    weekday:
+    - sat
+    - sun
+  conditions:
+  - condition: temperature.is_value
+    target:
+      entity_id:
+      - sensor.nws_39_7743151_105_2329094_kbjc_temperature
+    options:
+      behavior: any
+      for:
+        hours: 0
+        minutes: 10
+        seconds: 0
+      threshold:
+        type: above
+        value:
+          active_choice: number
+          unit_of_measurement: °F
+          number: 60
+  - condition: state
+    entity_id: climate.hallway
+    state:
+    - none
+    attribute: preset_mode
+  actions:
+  - action: climate.set_temperature
+    metadata: {}
+    target:
+      device_id: b3bc95a1b8cba8fcfd24a2e6ac7f8a87
+    data:
+      target_temp_high: 75
+      target_temp_low: 60
+      hvac_mode: heat_cool
+  mode: single
+- id: '1784305109978'
+  alias: Sonos - Group All
+  description: ''
+  triggers:
+  - trigger: media_player.started_playing
+    target:
+      device_id: 6ab6bf19b5966bfd86f1869f23aeb20a
+    options:
+      behavior: each
+  conditions:
+  - condition: media_player.is_not_playing
+    target:
+      device_id:
+      - ec8199f2dd147a0f60abdcd2ce8d5363
+      - 9edc1efefe482f301bb2d35425ccd1b1
+    options:
+      behavior: all
+  actions:
+  - action: media_player.join
+    metadata: {}
+    target:
+      device_id:
+      - 7b33b7c9f74e1b413681f8b5187619fd
+    data:
+      group_members:
+      - media_player.nomad
+      - media_player.living_room_amp
+  mode: single
+- id: '1784305207984'
+  alias: Sonos - Group Upstairs
+  description: ''
+  triggers:
+  - trigger: media_player.started_playing
+    target:
+      device_id: 9edc1efefe482f301bb2d35425ccd1b1
+    options:
+      behavior: each
+  conditions:
+  - condition: media_player.is_not_playing
+    target:
+      device_id:
+      - 7b33b7c9f74e1b413681f8b5187619fd
+    options:
+      behavior: any
+  actions:
+  - action: media_player.join
+    metadata: {}
+    target:
+      device_id:
+      - 9edc1efefe482f301bb2d35425ccd1b1
+      - 7b33b7c9f74e1b413681f8b5187619fd
+    data:
+      group_members:
       - media_player.kitchen
+  mode: single
+- id: '1784305608066'
+  alias: Sonos - Unjoin
+  description: ''
+  triggers:
+  - trigger: media_player.paused_playing
+    target:
+      device_id:
+      - 7b33b7c9f74e1b413681f8b5187619fd
+      - ec8199f2dd147a0f60abdcd2ce8d5363
+      - 9edc1efefe482f301bb2d35425ccd1b1
+    options:
+      behavior: all
+      for:
+        hours: 0
+        minutes: 10
+        seconds: 10
+  - trigger: media_player.stopped_playing
+    target:
+      device_id:
+      - 7b33b7c9f74e1b413681f8b5187619fd
+      - 9edc1efefe482f301bb2d35425ccd1b1
+      - ec8199f2dd147a0f60abdcd2ce8d5363
+    options:
+      behavior: all
+      for:
+        hours: 0
+        minutes: 10
+        seconds: 10
+  conditions: []
+  actions:
+  - action: media_player.unjoin
+    metadata: {}
+    target:
+      device_id:
+      - ec8199f2dd147a0f60abdcd2ce8d5363
+      - 7b33b7c9f74e1b413681f8b5187619fd
+      - 9edc1efefe482f301bb2d35425ccd1b1
+    data: {}
+  mode: single
+- id: '1784311558580'
+  alias: Button - Add Nomad
+  description: ''
+  triggers:
+  - trigger: state
+    entity_id:
+    - input_button.sonos_upstairs
+  conditions:
+  - condition: media_player.is_playing
+    target:
+      device_id:
+      - 7b33b7c9f74e1b413681f8b5187619fd
+      - 9edc1efefe482f301bb2d35425ccd1b1
+    options:
+      behavior: all
+  - condition: media_player.is_not_playing
+    target:
+      device_id:
+      - ec8199f2dd147a0f60abdcd2ce8d5363
+    options:
+      behavior: any
+  actions:
+  - action: media_player.join
+    metadata: {}
+    target:
+      entity_id: media_player.living_room_amp
+    data:
+      group_members:
+      - media_player.nomad
+  mode: single
+- id: '1784330041324'
+  alias: Sonos - Ungroup
+  description: ''
+  triggers:
+  - trigger: state
+    entity_id: input_button.sonos_everything
+  conditions: []
+  actions:
+  - action: media_player.unjoin
+    metadata: {}
+    target:
+      device_id:
+      - 7b33b7c9f74e1b413681f8b5187619fd
+      - 9edc1efefe482f301bb2d35425ccd1b1
+      - ec8199f2dd147a0f60abdcd2ce8d5363
+    data: {}
+  mode: single
+- id: '1784907871552'
+  alias: Travel Light - Off
+  description: ''
+  triggers:
+  - trigger: sun
+    event: sunrise
+    offset: -08:30:00
+  conditions: []
+  actions:
+  - action: light.turn_off
+    metadata: {}
+    target:
+      entity_id: light.outlet_switch
+    data: {}
+  mode: single
+- id: '1787954138179'
+  alias: Back Porch Lights - On
+  description: ''
+  triggers:
+  - trigger: switch.turned_on
+    target:
+      device_id: 250f27d3bf996182bccc661016b65fda
+    options:
+      behavior: each
+  - trigger: sun.dusk
+    options:
+      offset:
+        hours: 0
+        minutes: 30
+        seconds: 0
+        days: 0
+      offset_type: before
+      type: civil
+  - trigger: time
+    at: '22:00:00'
+    weekday:
+    - sun
+    - mon
+    - tue
+    - wed
+    - thu
+    - fri
+    - sat
+  conditions:
+  - condition: or
+    conditions:
+    - condition: sun.is_morning_twilight
+      options:
+        type: any
+    - condition: sun.is_evening_twilight
+      options:
+        type: any
+    - condition: sun.is_set
+      options: {}
+    - condition: sun.is_night
+      options: {}
+  actions:
+  - repeat:
+      until:
+      - condition: state
+        entity_id: binary_sensor.left_ceiling_fan_main_power
+        state:
+        - 'on'
+      - condition: state
+        entity_id: binary_sensor.right_ceiling_fan_main_power
+        state:
+        - 'on'
+      sequence:
+      - delay:
+          hours: 0
+          minutes: 0
+          seconds: 2
+          milliseconds: 0
+      - action: homeassistant.reload_config_entry
+        data:
+          entry_id: 01M17T2ENTJ3NMD6KF1XTYFA1V
+  - if:
+    - condition: time
+      after: '21:59:00'
+      before: 06:00:00
+      weekday:
+      - sun
+      - mon
+      - tue
+      - wed
+      - thu
+      - fri
+      - sat
+    then:
+    - action: light.turn_on
+      metadata: {}
+      target:
+        entity_id:
+        - light.right_ceiling_fan_light
+        - light.left_ceiling_fan_light
+      data:
+        brightness_pct: 1
+    - action: light.turn_on
+      metadata: {}
+      target:
+        entity_id:
+        - light.left_ceiling_fan_rgb_light
+        - light.right_ceiling_fan_rgb_light
+      data:
+        effect: Yellow
+        profile: Yellow
+    else:
+    - action: light.turn_on
+      metadata: {}
+      target:
+        entity_id:
+        - light.left_ceiling_fan_light
+        - light.right_ceiling_fan_light
+      data:
+        brightness_pct: 15
+  mode: single
+- id: '1788044624062'
+  alias: Back Porch Fan - On
+  description: ''
+  triggers:
+  - trigger: switch.turned_on
+    target:
+      entity_id: switch.back_porch_switch_1
+    options:
+      behavior: each
+      for: 00:00:00
+  - trigger: time_pattern
+    hours: /1
+  conditions:
+  - alias: above 60
+    condition: temperature.is_value
+    target:
+      entity_id: sensor.outside_outdoor_temperature_6
+    options:
+      behavior: any
+      for:
+        hours: 0
+        minutes: 0
+        seconds: 0
+      threshold:
+        type: above
+        value:
+          active_choice: number
+          number: 60
+          unit_of_measurement: °F
+  actions:
+  - wait_for_trigger:
+    - trigger: state
+      entity_id:
+      - binary_sensor.left_ceiling_fan_main_power
+      - binary_sensor.right_ceiling_fan_main_power
+      from:
+      to:
+      - 'on'
+  - if:
+    - condition: temperature.is_value
+      target:
+        entity_id: sensor.outside_outdoor_temperature_6
+      options:
+        threshold:
+          type: above
+          value:
+            active_choice: number
+            number: 75
+            unit_of_measurement: °F
+        for:
+          hours: 0
+          minutes: 10
+          seconds: 0
+      alias: above 75
+    then:
+    - action: fan.turn_on
+      metadata: {}
+      target:
+        entity_id:
+        - fan.left_ceiling_fan
+        - fan.right_ceiling_fan
+    else:
+    - action: fan.turn_on
+      metadata: {}
+      target:
+        entity_id:
+        - fan.left_ceiling_fan
+        - fan.right_ceiling_fan
+  mode: single
+- id: '1788050616567'
+  alias: Living Room Fan Summer Comfort - On
+  description: ''
+  triggers:
+  - trigger: time_pattern
+    hours: /1
+  conditions:
+  - condition: temperature.is_value
+    target:
+      entity_id: sensor.main_temperature
+    options:
+      threshold:
+        type: above
+        value:
+          active_choice: number
+          number: 69
+          unit_of_measurement: °F
+      for:
+        hours: 0
+        minutes: 10
+        seconds: 0
+  actions:
+  - if:
+    - condition: temperature.is_value
+      target:
+        entity_id: sensor.main_temperature
+      options:
+        threshold:
+          type: above
+          value:
+            active_choice: number
+            number: 75
+            unit_of_measurement: °F
+        for:
+          hours: 0
+          minutes: 10
+          seconds: 0
+    then:
+    - action: fan.set_percentage
+      metadata: {}
+      target:
+        entity_id: fan.living_room_fan_fan
+      data:
+        percentage: 90
+    else:
+    - action: fan.set_percentage
+      metadata: {}
+      target:
+        entity_id: fan.living_room_fan_fan
+      data:
+        percentage: 50
+  mode: single
+- id: '1788052650351'
+  alias: Back Porch Lights - Off
+  description: ''
+  triggers:
+  - trigger: switch.turned_on
+    target:
+      entity_id: switch.back_porch_switch_1
+    options:
+      behavior: each
+      for: 00:00:00
+  - trigger: sun.dawn
+    options:
+      offset:
+        hours: 0
+        minutes: 30
+        seconds: 0
+        days: 0
+      offset_type: before
+      type: civil
+  conditions:
+  - condition: sun.is_up
+    options: {}
+  actions:
+  - repeat:
+      until:
+      - condition: state
+        entity_id: binary_sensor.left_ceiling_fan_main_power
+        state:
+        - 'on'
+      - condition: state
+        entity_id: binary_sensor.right_ceiling_fan_main_power
+        state:
+        - 'on'
+      sequence:
+      - delay:
+          hours: 0
+          minutes: 0
+          seconds: 2
+          milliseconds: 0
+      - action: homeassistant.reload_config_entry
+        data:
+          entry_id: 01M17T2ENTJ3NMD6KF1XTYFA1V
+  - action: light.turn_off
+    metadata: {}
+    target:
+      entity_id:
+      - light.left_ceiling_fan_light
+      - light.right_ceiling_fan_light
+    data: {}
+  - action: light.turn_off
+    metadata: {}
+    target:
+      entity_id:
+      - light.left_ceiling_fan_rgb_light
+      - light.right_ceiling_fan_rgb_light
+    data: {}
+  mode: single
+- id: '1788052911427'
+  alias: Living Room Fan Summer Comfort - Off
+  description: ''
+  triggers:
+  - trigger: time_pattern
+    hours: /1
+  conditions:
+  - condition: temperature.is_value
+    target:
+      entity_id: sensor.main_temperature
+    options:
+      threshold:
+        type: below
+        value:
+          active_choice: number
+          number: 69
+          unit_of_measurement: °F
+      for:
+        hours: 0
+        minutes: 10
+        seconds: 0
+  actions:
+  - action: fan.turn_off
+    metadata: {}
+    target:
+      entity_id: fan.living_room_fan_fan
+    data: {}
+  mode: single
+- id: '1788053200405'
+  alias: Back Porch Fan - Off
+  description: ''
+  triggers:
+  - trigger: switch.turned_on
+    target:
+      entity_id: switch.back_porch_switch_1
+    options:
+      behavior: each
+      for: 00:00:00
+  - trigger: time_pattern
+    hours: /1
+  conditions:
+  - alias: above 60
+    condition: temperature.is_value
+    target:
+      entity_id: sensor.outside_outdoor_temperature_6
+    options:
+      behavior: any
+      for:
+        hours: 0
+        minutes: 0
+        seconds: 0
+      threshold:
+        type: below
+        value:
+          active_choice: number
+          number: 60
+          unit_of_measurement: °F
+  actions:
+  - wait_for_trigger:
+    - trigger: state
+      entity_id:
+      - binary_sensor.left_ceiling_fan_main_power
+      - binary_sensor.right_ceiling_fan_main_power
+      from:
+      to:
+      - 'on'
+  - action: fan.turn_off
+    metadata: {}
+    target:
+      entity_id:
+      - fan.left_ceiling_fan
+      - fan.right_ceiling_fan
+    data: {}
+  mode: single
+- id: '1788186068450'
+  alias: Back Porch Switch Status Off
+  description: ''
+  triggers:
+  - trigger: switch.turned_off
+    target:
+      entity_id: switch.back_porch_switch_1
+    options:
+      behavior: each
+      for: 00:00:00
+  conditions: []
+  actions:
+  - action: python_script.set_state
+    data:
+      entity_id:
+      - binary_sensor.left_ceiling_fan_main_power
+      - binary_sensor.right_ceiling_fan_main_power
+      state: 'off'
+    enabled: true

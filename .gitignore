@@ -8,7 +8,7 @@
 !*.txt
 !*.sh
 !blueprints/yngpadjuan/
-!custom_components/
+!custom_components/dreo/
 !dashboards/
 !packages/
 !python_scripts/
@@ -30,3 +30,8 @@ ip_counts.yaml
 tts/
 .DS_Store
 .storage/
+
+# HACS
+*LICENSE.txt
+custom_components/hacs/
+custom_components/thermal_comfort/
