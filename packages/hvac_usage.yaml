@@ -118,8 +118,6 @@ sensor:
     start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
     end: "{{ now() }}"
     state_class: total_increasing
-    attributes:
-      cost: 
 
   - platform: history_stats
     unique_id: hvac_total_increasing_heating_hours
