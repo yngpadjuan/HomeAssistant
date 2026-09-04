@@ -40,7 +40,7 @@ template:
         state: >
               {{ ((states('input_number.ac_condenser_btu_hr') | float(1)) 
               * (states('sensor.hvac_total_increasing_cooling_hours') | float(1)) 
-              * (states('input_number.electricity_rate') | float(1)) 
+              * (states('input_number.electricity_rate') | float(1))) 
               / (states('number.seer_rating_kw') | float(1)) }}
 
 
