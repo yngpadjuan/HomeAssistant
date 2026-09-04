@@ -106,6 +106,8 @@ sensor:
     start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
     end: "{{ now() }}"
     state_class: total_increasing
+    attributes:
+      cost: "{{ ((states('input_number.ac_condenser_btu_hr') | float(1)) * (this.state | float(1)) * (states('input_number.electricity_rate') | float(1)) / (states('number.seer_rating_kw') | float(1)) }}"
 
   - platform: history_stats
     name: HVAC Total Increasing Heating Hours
