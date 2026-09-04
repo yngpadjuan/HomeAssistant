@@ -43,6 +43,16 @@ template:
               * (states('input_number.electricity_rate') | float(1))) 
               / (states('number.seer_rating_kw') | float(1)) }}
 
+      - name: Furnace Cost per h
+        unique_id: furnace_cost_per_h
+        unit_of_measurement: "$"
+        state_class: measurement
+        state: >
+              {{ ((((states('input_number.input_number.furnace_btu_h') | float(1)) 
+              / ((states('input_number.afue_efficiency') | float(1)) / 100))
+              / 100000) 
+              * (states('input_number.cost_per_therm') | float(1))) }}
+
 
 sensor:
   - platform: history_stats
