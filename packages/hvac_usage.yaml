@@ -36,7 +36,9 @@ template:
       - name: AC Cost per kWh
         unique_id: ac_cost_per_kwh
         unit_of_measurement: "$"
-        state_class: measurement
+        state_class: total_increasing
+        start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+        end: "{{ now() }}"
         state: >
               {{ ((states('input_number.ac_condenser_btu_hr') | float(1)) 
               * (states('sensor.hvac_total_increasing_cooling_hours') | float(1)) 
@@ -46,7 +48,9 @@ template:
       - name: Furnace Cost per h
         unique_id: furnace_cost_per_h
         unit_of_measurement: "$"
-        state_class: measurement
+        state_class: total_increasing
+        start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+        end: "{{ now() }}"
         state: >
               {{ ((((states('input_number.input_number.furnace_btu_h') | float(1)) 
               / ((states('input_number.afue_efficiency') | float(1)) / 100))
