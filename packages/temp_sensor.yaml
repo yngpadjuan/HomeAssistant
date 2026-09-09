@@ -1,0 +1,23 @@
+template:
+  sensor:          
+      - name: Average House Temperature
+        unique_id: average_house_temperature
+        unit_of_measurement: "°F"
+        state_class: measurement
+        state: >
+              {{ average(
+                  states("sensor.living_room_indoor_thermo_2_temperature") | float,
+                  states("sensor.nomad_indoor_thermo_1_temperature") | float,
+                  states("sensor.main_temperature") | float
+              ) }}
+
+      - name: Average House Humidity 
+        unique_id: average_house_temperature
+        unit_of_measurement: "%"
+        state_class: measurement
+        state: >
+              {{ average(
+                  states("sensor.living_room_indoor_thermo_2_humidity") | float,
+                  states("sensor.nomad_indoor_thermo_1_humidity") | float,
+                  states("sensor.main_humidity") | float
+              ) }}
