@@ -12,7 +12,7 @@ template:
               ) }}
 
       - name: Average House Humidity 
-        unique_id: average_house_temperature
+        unique_id: average_house_humidity
         unit_of_measurement: "%"
         state_class: measurement
         state: >
