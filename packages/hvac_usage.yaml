@@ -51,8 +51,29 @@ template:
               {{ ((((states('input_number.input_number.furnace_btu_h') | float(1)) 
               / ((states('input_number.afue_efficiency') | float(1)) / 100))
               / 100000) 
-              * (states('input_number.cost_per_therm') | float(1))) }}
+              * (states('input_number.cost_per_therm') | float(1)))
+              * (states('sensor.hvac_total_increasing_heating_hours')) }}
 
+      - name: Monthly AC Cost
+        unique_id: monthly_ac_cost
+        unit_of_measurement: "$"
+        state_class: total_increasing
+        state: >
+              {{ ((states('input_number.ac_condenser_btu_hr') | float(1)) 
+              * (states('sensor.monthly_hvac_cooling_hours') | float(1)) 
+              * (states('input_number.electricity_rate') | float(1))) 
+              / (states('number.seer_rating_kw') | float(1)) }}
+
+      - name: Monthly Furnace Cost
+        unique_id: monthly_furnace_cost
+        unit_of_measurement: "$"
+        state_class: total_increasing
+        state: >
+              {{ ((((states('input_number.input_number.furnace_btu_h') | float(1)) 
+              / ((states('input_number.afue_efficiency') | float(1)) / 100))
+              / 100000) 
+              * (states('input_number.cost_per_therm') | float(1)))
+              * (states('sensor.monthly_heating_hours')) }}
 
 sensor:
   - platform: history_stats
