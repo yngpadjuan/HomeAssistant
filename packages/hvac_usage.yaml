@@ -52,7 +52,7 @@ template:
               / ((states('input_number.afue_efficiency') | float(1)) / 100))
               / 100000) 
               * (states('input_number.cost_per_therm') | float(1)))
-              * (states('sensor.hvac_total_increasing_heating_hours')) }}
+              * (states('sensor.hvac_total_increasing_heating_hours') | float(0)) }}
 
       - name: Monthly AC Cost
         unique_id: monthly_ac_cost
@@ -73,7 +73,7 @@ template:
               / ((states('input_number.afue_efficiency') | float(1)) / 100))
               / 100000) 
               * (states('input_number.cost_per_therm') | float(1)))
-              * (states('sensor.monthly_heating_hours')) }}
+              * (states('sensor.monthly_heating_hours') | float(0)) }}
 
 sensor:
   - platform: history_stats
