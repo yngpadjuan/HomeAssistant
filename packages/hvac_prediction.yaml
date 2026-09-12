@@ -226,7 +226,11 @@ template:
               {% set ns.high = [ns.high, t_feels] | max %}
             {% endif %}
           {% endfor %}
-          {{ ns.high | round(1) | int(0) }}
+          {% if ns.high | float > states('sensor.predicted_indoor_high_today') | float(-100) %}
+            {{ ns.high | round(1) | int(0) }}
+          {% else %}
+            {{ states('sensor.predicted_indoor_high_today') | round(1) | int(0) }}
+          {% endif %}
 
       - name: Predicted Indoor Low Today
         unique_id: hvac_predicted_indoor_low_today
@@ -248,4 +252,8 @@ template:
               {% set ns.low = [ns.low, t_feels] | min %}
             {% endif %}
           {% endfor %}
-          {{ ns.low | round(1) | int(0) }}
+          {% if ns.low | float < states('sensor.predicted_indoor_low_today') | float(1000) %}
+            {{ ns.low | round(1) | int(0) }}
+          {% else %}
+            {{ states('sensor.predicted_indoor_low_today') | round(1) | int(0) }}
+          {% endif %}
