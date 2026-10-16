@@ -48,8 +48,7 @@ template:
         unit_of_measurement: "$"
         state_class: total_increasing
         state: >
-              {{ ((((states('input_number.input_number.furnace_btu_h') | float(1)) 
-              / ((states('input_number.afue_efficiency') | float(1)) / 100))
+              {{ (((states('input_number.input_number.furnace_btu_h') | float(1))  
               / 100000) 
               * (states('input_number.cost_per_therm') | float(1)))
               * (states('sensor.hvac_total_increasing_heating_hours') | float(0)) }}
@@ -69,8 +68,7 @@ template:
         unit_of_measurement: "$"
         state_class: total_increasing
         state: >
-              {{ ((((states('input_number.input_number.furnace_btu_h') | float(1)) 
-              / ((states('input_number.afue_efficiency') | float(1)) / 100))
+              {{ (((states('input_number.input_number.furnace_btu_h') | float(1)) 
               / 100000) 
               * (states('input_number.cost_per_therm') | float(1)))
               * (states('sensor.monthly_heating_hours') | float(0)) }}
